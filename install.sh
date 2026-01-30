@@ -14,6 +14,7 @@ SKILLS=(
     "lightning-server"
     "lightning-server-kiteui"
     "ls5-kui7-migration"
+    "model-design"
     "service-abstractions"
 )
 

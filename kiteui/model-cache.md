@@ -163,25 +163,31 @@ val currentOrg = remember {
 }.flatten()  // Reactive<Reactive<Org?>> -> Reactive<Org?>
 ```
 
-## Anti-Pattern: Direct API Calls
+## Anti-Pattern: Direct API Calls for Data Display
 
 ```kotlin
-// WRONG: Bypasses cache, no reactivity, wasted network requests
+// ❌ WRONG for data display: Bypasses cache, no reactivity
 launch {
     val users = session.api.user.query(Query(...))  // Direct API call
     // Problem: Not cached, not reactive, every call fetches from server
 }
 
-// WRONG: Manual cache invalidation needed, UI doesn't update automatically
+// ❌ WRONG: Manual cache invalidation needed, UI doesn't update automatically
 val users = Signal<List<User>>(emptyList())
 launch {
     users.value = session.api.user.query(Query(...))
     // Problem: If another screen modifies a user, this list is stale
 }
 
-// RIGHT: Use ModelCache
+// ✅ RIGHT for CRUD: Use ModelCache
 val users = remember {
     session.users.list(Query(...))()  // Cached, reactive, auto-updates
+}
+
+// ✅ RIGHT for non-CRUD actions: Direct API is fine
+launch {
+    session.api.door.unlock(doorId)  // Action, not data query
+    session.api.notification.sendPush(message)  // Fire-and-forget
 }
 ```
 
@@ -203,8 +209,8 @@ class DetailScreen(val itemId: Uuid) : Page {
         }
 
         // UI automatically shows loading state until item is set
-        reactiveScope {
-            val i = item() ?: return@reactiveScope  // Labeled return
+        reactive {
+            val i = item() ?: return@reactive  // Labeled return
             h1 { content = i.name }
             text { content = i.description }
         }
@@ -325,7 +331,7 @@ import com.lightningkite.services.database.contains
 → Missing `import com.lightningkite.reactive.context.*`
 
 **"Return is prohibited here"**
-→ Use labeled return: `return@reactiveScope` or `return@launch`
+→ Use labeled return: `return@reactive` or `return@launch`
 
 **"Unresolved reference: name" (in modification block)**
 → Don't import field paths at top level - they're auto-provided in `modification {}`
@@ -353,9 +359,12 @@ When items are deleted from a limited query (e.g., `limit = 10`), the cache does
 
 ## Summary
 
-**ALWAYS use ModelCache. Never call API endpoints directly from UI code.** The only exceptions are:
-- Server-side code (obviously)
+**Use ModelCache for CRUD operations** (queries, gets, modifications) - it provides caching, reactivity, and automatic UI updates.
+
+**Direct API calls are appropriate for:**
+- Non-CRUD actions (e.g., `api.door.unlock()`, `api.email.send()`)
 - One-off operations where result is never displayed (e.g., logging events)
 - Operations that don't return data models (e.g., file uploads, health checks)
+- Server-side code
 
-For everything else, ModelCache is the correct, optimized, production-ready solution.
+For data display and CRUD, ModelCache is the correct, optimized, production-ready solution.

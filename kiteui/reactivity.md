@@ -109,10 +109,10 @@ text {
 
 ## ReactiveScope Block
 
-**⚠️ WARNING: reactiveScope adds duplicate views on every rerun!**
+**⚠️ WARNING: reactive adds duplicate views on every rerun!**
 
 ```kotlin
-reactiveScope {
+reactive {
     // Re-runs when signals inside change
     if (showAdvanced()) {
         advancedSettings()  // ⚠️ This adds NEW views each time, doesn't replace!
@@ -144,25 +144,25 @@ swapView(remember { if (showAdvanced()) "advanced" else "simple" }) { mode ->
 // ✅ GOOD: Use reactive bindings for automatic loading states
 text { ::content { userData()?.name ?: "Loading..." } }
 
-// ❌ AVOID: Manual reactiveScope creates duplicate views
-reactiveScope {
+// ❌ AVOID: Manual reactive creates duplicate views
+reactive {
     val data = userData()
     if (data != null) {
         text { content = data.name }  // Adds new text view on every userData change!
     }
 }
 
-// ⚠️ LAST RESORT: If you MUST use reactiveScope, ALWAYS clear children first
-reactiveScope {
+// ⚠️ LAST RESORT: If you MUST use reactive, ALWAYS clear children first
+reactive {
     clearChildren()  // ⚠️ CRITICAL: Remove old views before adding new ones
     if (showAdvanced()) {
         advancedSettings()
     }
 }
 
-// Example: Dynamic lists with reactiveScope (when forEach doesn't work)
+// Example: Dynamic lists with reactive (when forEach doesn't work)
 col {
-    reactiveScope {
+    reactive {
         clearChildren()  // ⚠️ MUST call this to prevent duplicates
 
         booth()?.lockIds?.forEach { lockInfo ->
@@ -180,9 +180,9 @@ col {
 2. **swapView** - For animated transitions between different views
 3. **::property { }** - For automatic loading states and reactive text
 4. **forEach** - For dynamic lists (when it works - may have issues with complex types)
-5. **reactiveScope + clearChildren()** - Last resort when the above don't work
+5. **reactive + clearChildren()** - Last resort when the above don't work
 
-**⚠️ CRITICAL: Always call `clearChildren()` as the first line in reactiveScope blocks that add views!**
+**⚠️ CRITICAL: Always call `clearChildren()` as the first line in reactive blocks that add views!**
 
 ## ForEach - Reactive Lists
 
@@ -339,12 +339,12 @@ launch {
 
 ## ReactiveScope Labeled Returns
 
-Always use labeled returns in `reactiveScope` blocks when handling nullable values:
+Always use labeled returns in `reactive` blocks when handling nullable values:
 
 ```kotlin
 // ✅ CORRECT - Labeled return
-reactiveScope {
-    val item = mySignal() ?: return@reactiveScope
+reactive {
+    val item = mySignal() ?: return@reactive
     // Safe to use item here
     text { content = item.name }
 }
@@ -356,13 +356,13 @@ launch {
 }
 
 // ❌ WRONG - Bare return causes compilation error
-reactiveScope {
+reactive {
     val item = mySignal() ?: return  // Error: "return is prohibited here"
 }
 ```
 
 **Why labeled returns?**
-`reactiveScope` is a lambda, not a function body, so you must specify which lambda you're returning from.
+`reactive` is a lambda, not a function body, so you must specify which lambda you're returning from.
 
 ## Common Issue: clearChildren() Clears Sibling Elements
 
@@ -371,37 +371,37 @@ reactiveScope {
 - Static elements (headers, buttons) disappear after reactive content loads
 - Page content vanishes when signals update
 
-**Root Cause:** When `reactiveScope { clearChildren() }` is used directly inside a `col` or `row`, `clearChildren()` clears ALL children of the parent container, not just the content within the reactiveScope.
+**Root Cause:** When `reactive { clearChildren() }` is used directly inside a `col` or `row`, `clearChildren()` clears ALL children of the parent container, not just the content within the reactive.
 
 **❌ WRONG - clearChildren clears siblings:**
 ```kotlin
 expanding.scrolling.col {
     h2("Projects")  // Gets cleared!
-    reactiveScope {
+    reactive {
         clearChildren()
         projects().forEach { /* render project */ }
     }
 
     h2("Tasks")  // Gets cleared!
-    reactiveScope {
+    reactive {
         clearChildren()
         tasks().forEach { /* render task */ }
     }
 
-    h2("Runners")  // Only this section survives (last reactiveScope wins)
-    reactiveScope {
+    h2("Runners")  // Only this section survives (last reactive wins)
+    reactive {
         clearChildren()
         runners().forEach { /* render runner */ }
     }
 }
 ```
 
-**✅ CORRECT - Wrap each reactiveScope in its own container:**
+**✅ CORRECT - Wrap each reactive in its own container:**
 ```kotlin
 expanding.scrolling.col {
     h2("Projects")
     col {  // Isolated container
-        reactiveScope {
+        reactive {
             clearChildren()  // Only clears this col's children
             projects().forEach { /* render project */ }
         }
@@ -409,7 +409,7 @@ expanding.scrolling.col {
 
     h2("Tasks")
     col {  // Isolated container
-        reactiveScope {
+        reactive {
             clearChildren()
             tasks().forEach { /* render task */ }
         }
@@ -417,7 +417,7 @@ expanding.scrolling.col {
 
     h2("Runners")
     col {  // Isolated container
-        reactiveScope {
+        reactive {
             clearChildren()
             runners().forEach { /* render runner */ }
         }
@@ -425,4 +425,4 @@ expanding.scrolling.col {
 }
 ```
 
-**Key Insight:** `clearChildren()` operates on the ViewWriter's current context. Without an isolating container, all reactiveScope blocks share the parent's context and interfere with each other.
+**Key Insight:** `clearChildren()` operates on the ViewWriter's current context. Without an isolating container, all reactive blocks share the parent's context and interfere with each other.

@@ -95,7 +95,7 @@ field("Username") {
     }
 }
 
-reactiveScope {
+reactive {
     usernameError()?.let { error ->
         danger.subtext { content = error }
     }
@@ -151,7 +151,7 @@ col {
     field("Email") {
         textInput { content bind email }
     }
-    reactiveScope {
+    reactive {
         errors().email?.let { danger.subtext { content = it } }
     }
 
@@ -161,7 +161,7 @@ col {
             content bind password
         }
     }
-    reactiveScope {
+    reactive {
         errors().password?.let { danger.subtext { content = it } }
     }
 
@@ -171,7 +171,7 @@ col {
             content bind confirmPassword
         }
     }
-    reactiveScope {
+    reactive {
         errors().confirmPassword?.let { danger.subtext { content = it } }
     }
 
@@ -198,7 +198,7 @@ textInput {
     content bind username
 }
 
-reactiveScope {
+reactive {
     val name = username()
     if (name.length >= 3) {
         isCheckingAvailability.value = true
@@ -222,7 +222,7 @@ reactiveScope {
     }
 }
 
-reactiveScope {
+reactive {
     availabilityMessage()?.let { msg ->
         val isAvailable = msg.startsWith("✓")
         if (isAvailable) {
@@ -268,7 +268,7 @@ col {
     field("Email") {
         textInput { content bind email }
     }
-    reactiveScope {
+    reactive {
         errors().fieldErrors["email"]?.let { error ->
             danger.subtext { content = error }
         }
@@ -277,7 +277,7 @@ col {
     field("Username") {
         textInput { content bind username }
     }
-    reactiveScope {
+    reactive {
         errors().fieldErrors["username"]?.let { error ->
             danger.subtext { content = error }
         }

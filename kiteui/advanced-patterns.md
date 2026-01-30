@@ -129,9 +129,9 @@ col {
         // ... advanced controls
     }
 
-    // Or using reactiveScope (clear children first!)
+    // Or using reactive (clear children first!)
     col {
-        reactiveScope {
+        reactive {
             clearChildren()
             if (showAdvanced()) {
                 advancedSettings()

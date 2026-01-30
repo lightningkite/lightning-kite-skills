@@ -34,6 +34,9 @@ project/
 2. **Properties update reactively** - Content, visibility, etc. update automatically
 3. **Never create views inside reactive scopes** - Only update properties
 4. **Based on SolidJS** - Uses reactive scopes that re-run when dependencies change
+5. **Prefer ModelCache** (`session.users.list()`) over direct API (`session.api.user.query()`)
+6. **Prefer `recyclerView`** over `forEach` when the list can take available space (`expanding`)
+7. **`EmailAddress.raw`** to get the string value from EmailAddress type
 
 ### CRITICAL: Reactive Context Import Requirement
 

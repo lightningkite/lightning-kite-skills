@@ -146,7 +146,7 @@ col {
     }
 
     // Error message below field
-    reactiveScope {
+    reactive {
         emailError()?.let { error ->
             danger.text { content = error }
         }

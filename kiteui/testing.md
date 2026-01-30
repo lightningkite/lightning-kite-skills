@@ -214,7 +214,7 @@ echo "Ready for browser testing at http://localhost:8942"
 Ensure the view has been added to parent and `postSetup()` has been called. Themes cascade from parent.
 
 ### State not updating UI
-Use reactive scope with `::content { }` or `reactiveScope { }` to make UI respond to state changes.
+Use reactive scope with `::content { }` or `reactive { }` to make UI respond to state changes.
 
 ### Memory leaks
 Enable leak detection in development: `RViewHelper.leakDetection = true`. Check for strong references in closures and verify `shutdown()` is called.
