@@ -8,6 +8,8 @@ version: 3.0.0
 
 KiteUI is a Kotlin Multiplatform UI framework using native view components and fine-grained reactivity (inspired by Solid.js).
 
+**🔑 KEY CONCEPT: `render()` runs ONCE, not on every state change (unlike React).** Using `launch` in render is fine for one-time setup. Only reactive bindings (`::content { }`, `reactive { }`) re-execute when signals change.
+
 ## Agent Instructions
 
 **Before answering complex questions, READ the relevant sub-file:**
@@ -25,6 +27,75 @@ KiteUI is a Kotlin Multiplatform UI framework using native view components and f
 
 ---
 
+## General Tips
+
+- `scrolling` modifier makes views scroll vertically; will clip content otherwise
+- `onClick {}`'s lambda is already suspending; no need to launch
+- Avoid creating components unless significantly useful; layers of abstraction have cost
+- Avoid custom spacing with `gap = x` - default spacing almost always looks good already
+- 
+
+## Using KiteUI with Lightning Server
+
+- `./gradlew :server:generateSdk` will regenerate the SDK from the server definition
+- Use ModelCache for CRUD, direct API for actions
+```kotlin
+// ❌ WRONG for data display - bypasses caching, no reactivity
+val users = session.api.user.query(Query(...))
+
+// ✅ CORRECT for CRUD - cached, reactive, auto-updates across all views
+val users = remember { session.users.list(Query(...))() }
+
+// ✅ CORRECT for non-CRUD actions (no caching needed)
+session.api.door.unlock(doorId)
+session.api.email.send(emailRequest)
+```
+
+- Prefer using server-side filtering
+
+```kotlin
+// ❌ WRONG - loads ALL data then filters client-side
+val filtered = remember { allUsers().filter { it.name.contains(query()) } }
+
+// ✅ CORRECT - server filters, only matching records sent
+val filtered = remember {
+    session.users.list(Query(condition {
+        it.name.contains(query(), ignoreCase = true)
+    }))()
+}
+```
+
+### ModelCache (Lightning Server)
+
+```kotlin
+// Setup: wrap endpoints in CachedApi
+class UserSession(val api: Api) : CachedApi(api) { }
+
+// Individual item (reactive)
+val user = remember { session.users[userId]() }
+text { ::content { user()?.name ?: "Loading..." } }
+
+// Query (reactive list)
+val activeUsers = remember {
+    session.users.list(Query(condition { it.active eq true }))()
+}
+forEach(activeUsers) { user -> text { ::content { user().name } } }
+
+// Modify (updates all views automatically)
+launch {
+    session.users[userId].modify(modification { it.name assign "New Name" })
+}
+
+// Search with debounce
+val searchDebounced = searchQuery.debounce(500)
+val results = remember {
+    session.users.list(Query(condition {
+        if (searchDebounced().isEmpty()) Condition.Always
+        else it.name.contains(searchDebounced(), ignoreCase = true)
+    }))()
+}
+```
+
 ## ⚠️ CRITICAL PITFALLS (Read First!)
 
 ### 1. V7 uses DOT notation, NOT dash
@@ -34,15 +105,6 @@ expanding.scrolling.card.col { }
 
 // ❌ V6 WRONG - dash doesn't exist in v7
 expanding - scrolling - card - col { }
-```
-
-### 2. Nothing scrolls without `scrolling`
-```kotlin
-// ❌ WRONG - content will clip, not scroll
-col { repeat(100) { text("Item $it") } }
-
-// ✅ CORRECT
-scrolling.col { repeat(100) { text("Item $it") } }
 ```
 
 ### 3. reactive DUPLICATES views on rerun
@@ -86,32 +148,6 @@ col {
 }
 ```
 
-### 5. Use ModelCache for CRUD, direct API for actions
-```kotlin
-// ❌ WRONG for data display - bypasses caching, no reactivity
-val users = session.api.user.query(Query(...))
-
-// ✅ CORRECT for CRUD - cached, reactive, auto-updates across all views
-val users = remember { session.users.list(Query(...))() }
-
-// ✅ CORRECT for non-CRUD actions (no caching needed)
-session.api.door.unlock(doorId)
-session.api.email.send(emailRequest)
-```
-
-### 6. ALWAYS use server-side filtering, never client-side
-```kotlin
-// ❌ WRONG - loads ALL data then filters client-side
-val filtered = remember { allUsers().filter { it.name.contains(query()) } }
-
-// ✅ CORRECT - server filters, only matching records sent
-val filtered = remember {
-    session.users.list(Query(condition {
-        it.name.contains(query(), ignoreCase = true)
-    }))()
-}
-```
-
 ### 7. Use labeled returns in reactive/launch
 ```kotlin
 // ❌ WRONG - "return is prohibited here"
@@ -146,37 +182,6 @@ val userDetails = rememberSuspending {
 }
 ```
 
-### 9. Don't use `launch` inside `onClick` - it's already suspending
-```kotlin
-// ❌ WRONG - loses working animation, errors not handled
-button {
-    text("Save")
-    onClick {
-        launch {  // Unnecessary! onClick is already suspending
-            api.save(data())
-        }
-    }
-}
-
-// ✅ CORRECT - onClick is suspending, button shows working state automatically
-button {
-    text("Save")
-    onClick {
-        api.save(data())  // Direct suspend call
-        toast("Saved!")
-    }
-}
-
-// ✅ EVEN BETTER - use Action for named operations with automatic error handling
-button {
-    text("Save")
-    action = Action("Save") {
-        api.save(data())
-        toast("Saved!")
-    }
-}
-```
-
 ### 10. Theme switches create backgrounds
 ```kotlin
 // Creates background (switches from default to important)
@@ -193,21 +198,9 @@ card.text("Title")
 card.text("Content")  // Two separate cards!
 ```
 
-### 11. MJS filename must match rootProject.name
-```html
-<!-- settings.gradle.kts: rootProject.name = "my-app" -->
-<!-- ❌ WRONG --><script src="/ls-kiteui-starter-apps.mjs"></script>
-<!-- ✅ CORRECT --><script src="/my-app-apps.mjs"></script>
-```
-
-### 12. Regenerate SDK after backend changes
-```bash
-./gradlew :server:generateSdk  # Required after endpoint changes
-```
-
 ---
 
-## Recommended Imports (add to all KiteUI files)
+## Recommended Imports - Use * imports (add to all KiteUI files)
 
 ```kotlin
 import com.lightningkite.kiteui.*
@@ -236,15 +229,16 @@ import kotlinx.coroutines.*
 col { }                    // Vertical stack (flex-direction: column)
 row { }                    // Horizontal (flex-direction: row)
 frame { }                  // Z-stack (position: relative with absolute children)
+rowCollapsingToColumn(70.rem) { }  // Horizontal if screen larger than input, vertical otherwise.  Vertical mode ignores weights.
 
 // Modifiers chain BEFORE container
 expanding.scrolling.card.col { }
 
 // Sizing
-expanding                  // flex: 1 (takes available space)
-weight(2f)                 // flex: 2
-sizeConstraints(width = 20.rem, height = 10.rem)
-sizeConstraints(minWidth = 10.rem, maxWidth = 30.rem)
+expanding.someView                  // flex: 1 (takes available space)
+weight(2f).someView                 // flex: 2
+sizeConstraints(width = 20.rem, height = 10.rem).someView
+sizeConstraints(minWidth = 10.rem, maxWidth = 30.rem).someView
 
 // Frame positioning
 frame {
@@ -261,6 +255,14 @@ scrollingHorizontally.row { /* horizontal scroll */ }
 ---
 
 ## Reactivity
+
+- `Reactive<T>` is a watchable, changing value
+- `MutableReactive<T>` is one that can be changed with '.set(x)' (suspending)
+- `Signal<T>(startingValue)` is a concrete implementation that can be changed with `.value = x`
+- `reactive {}` runs the given block as often as dependencies change
+- `someReactive()` will retrieve the value of a reactive AND set the dependency
+- Reactives already hold their own loading / error states; using `reactive {}` in a view will automatically show loading states in UI if it's still being calculated
+- `remember {}` is a reactive value that is calculated from the given reactive block, automatically recalculated when a dependency changes
 
 ```kotlin
 // Mutable state
@@ -280,14 +282,24 @@ val user = rememberSuspending {
 // Reactive text binding
 text { ::content { "Count: ${count()}" } }
 
-// Two-way binding
+// Two-way binding - binds two MutableReactive<T>
 textInput { content bind email }
 
-// Conditional visibility (PREFERRED over reactive)
+// Conditional visibility (PREFERRED over reactive creation / destruction of views)
 shownWhen { showAdvanced() }.card.col { advancedSettings() }
 
-// Lists
-forEach(items) { item -> card.text(item.name) }
+// Reactive list rendering
+val items = Signal(listOf("A", "B", "C"))
+col {
+    forEachById(items, id = { it } /*used to distinguish rows*/) { item: Reactive<String> ->
+        card.text { ::content { item() } }
+    }
+}
+recyclerView {  // handles its own scrolling, needs a size controlled by the outside.  Similar to Android's RecyclerView.
+    children(items, id = { it } /*used to distinguish rows*/) { item: Reactive<String> ->
+        card.text { ::content { item() } }
+    }
+}
 
 // Reactive lens extensions
 radioButton { checked bind selected.equalTo(1) }  // Radio groups
@@ -326,10 +338,27 @@ danger.button { text("Delete") }
 // Inputs
 textInput {
     hint = "Email"
-    keyboardHints = KeyboardHints.email
+    keyboardHints = KeyboardHints.email  // Don't forget this!  You need to tell it what kind of keyboard to use.
     content bind email
 }
-textArea { content bind notes }
+textArea {
+    keyboardHints = KeyboardHints.email  // Don't forget this!  You need to tell it what kind of keyboard to use.
+    content bind notes 
+}
+
+// Keyboard hint options
+KeyboardHints.paragraph
+KeyboardHints.title
+KeyboardHints.id
+KeyboardHints.integer
+KeyboardHints.integerWithNegative
+KeyboardHints.decimal
+KeyboardHints.decimalWithNegative
+KeyboardHints.phone
+KeyboardHints.email
+KeyboardHints.password
+KeyboardHints.newPassword
+KeyboardHints.oneTimeCode
 
 // Selection
 checkbox { checked bind isEnabled }
@@ -337,9 +366,10 @@ switch { checked bind isEnabled }
 radioToggleButton { checked bind selected.equalTo(0) }
 select { bind(selectedValue, options) { it } }
 
-// Icons (from Material Design paths)
+// Icons (from Material Design paths, though a limited subset)
 icon(Icon.home, "Home")
 icon { source = AppIcons.custom; description = "Custom" }
+icon(Icon.home.copy(width = 3.rem, height = 3.rem), "Home")  // Huge icon
 ```
 
 ---
@@ -370,39 +400,6 @@ externalLink { text("Docs"); to = "https://example.com" }
 
 ---
 
-## ModelCache (Lightning Server)
-
-```kotlin
-// Setup: wrap endpoints in CachedApi
-class UserSession(val api: Api) : CachedApi(api) { }
-
-// Individual item (reactive)
-val user = remember { session.users[userId]() }
-text { ::content { user()?.name ?: "Loading..." } }
-
-// Query (reactive list)
-val activeUsers = remember {
-    session.users.list(Query(condition { it.active eq true }))()
-}
-forEach(activeUsers) { user -> text { ::content { user().name } } }
-
-// Modify (updates all views automatically)
-launch {
-    session.users[userId].modify(modification { it.name assign "New Name" })
-}
-
-// Search with debounce
-val searchDebounced = searchQuery.debounce(500)
-val results = remember {
-    session.users.list(Query(condition {
-        if (searchDebounced().isEmpty()) Condition.Always
-        else it.name.contains(searchDebounced(), ignoreCase = true)
-    }))()
-}
-```
-
----
-
 ## Dialogs
 
 ```kotlin
@@ -415,6 +412,7 @@ if (confirmed) deleteItem()
 
 // Custom dialog
 dialog { close ->
+    card.col {
     card.col {
         h2("Title")
         text("Content")
@@ -436,39 +434,6 @@ confirmDanger("Delete", "Cannot be undone") { api.delete(id) }
 
 ---
 
-## Forms & Validation
-
-```kotlin
-val email = Signal("")
-val emailError = Signal<String?>(null)
-
-col {
-    field("Email") {
-        fieldTheme.textInput {
-            hint = "your@email.com"
-            keyboardHints = KeyboardHints.email
-            content bind email
-        }
-    }
-    // Error display
-    reactive { emailError()?.let { danger.subtext { content = it } } }
-
-    important.button {
-        text("Submit")
-        action = Action("Submit") {
-            emailError.value = null
-            if (!email().contains("@")) {
-                emailError.value = "Invalid email"
-                throw PlainTextException("Fix errors above", "Validation Failed")
-            }
-            api.submit(email())
-        }
-    }
-}
-```
-
----
-
 ## Theming
 
 ```kotlin
@@ -477,7 +442,12 @@ important.button { }  // Primary action
 danger.button { }     // Destructive
 warning.text("!")     // Warning
 card.col { }          // Card background
-fieldTheme.textInput { }  // Field styling
+
+// Make a field
+field("Label") { 
+    // fieldTheme automatically applied
+    textInput { /*...*/ }
+}
 
 // Dynamic theme based on state
 link {
@@ -523,13 +493,6 @@ col {
 ```kotlin
 // Keyboard shortcuts
 onKeyCode(keyCode { shortcut + it.letter('s') }) { saveAction.startAction(this) }
-
-// RecyclerView for large lists
-recyclerView {
-    children(items, id = { it._id }) { item ->
-        card.text { ::content { item().name } }
-    }
-}
 
 // Permission-based visibility
 shownWhen { session().role != UserRole.Guest }.button { text("Admin") }

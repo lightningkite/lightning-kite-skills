@@ -1,5 +1,40 @@
 # KiteUI Reactivity & State Management
 
+## ⚠️ IMPORTANT: KiteUI Execution Model (Not Like React!)
+
+KiteUI uses **fine-grained reactivity** like Solid JS, NOT virtual DOM diffing like React.
+
+**Key difference:** The `render()` function runs **only once** when the view is first created. It does NOT re-run when state changes. Instead, only the specific reactive bindings (like `::content { }`) re-execute.
+
+```kotlin
+// ✅ This is FINE - render() only runs once, so launch runs once
+override fun ViewWriter.render() {
+    launch {
+        val session = currentSession.await()
+        if (session != null) {
+            pageNavigator.navigate(HomePage())
+        }
+    }
+
+    col {
+        // This text binding re-runs when count changes, but render() does not
+        text { ::content { "Count: ${count()}" } }
+    }
+}
+```
+
+**DO NOT apply React patterns to KiteUI:**
+- ❌ Don't worry about "re-renders" - they don't exist in KiteUI
+- ❌ Don't avoid `launch` in render - it only fires once
+- ❌ Don't think of render as a "pure function" that shouldn't have side effects
+
+**DO understand KiteUI's model:**
+- ✅ `render()` sets up the view structure once
+- ✅ Reactive bindings (`::property { }`, `reactive { }`) update automatically
+- ✅ `launch` in render is fine for one-time initialization
+
+---
+
 ## Signal - Mutable Reactive State
 
 ```kotlin
