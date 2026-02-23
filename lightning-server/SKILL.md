@@ -90,8 +90,8 @@ This gives you: `GET /posts/rest`, `GET /posts/rest/{id}`, `POST /posts/rest`, `
 **Need to validate before creation?** → Use `interceptCreate`
 **Need to validate before update?** → Use `interceptChange`
 **Need old value for validation?** → Use `interceptChangePerInstance` (expensive!)
-**Need to prevent field modification?** → Use `updateRestrictions`
-**Need to trigger side effects?** → Use `postChange` or `postCreate`
+**Need to prevent field modification?** → Use `updateRestrictions` (`.cannotBeModified()` or `.requires(condition) { valueCondition }`)
+**Need to trigger side effects?** → Use `postChange`, `postCreate`, or `postRawChanges` (batch)
 **Need to clean up after deletion?** → Use `postDelete`
 
 **⚠️ CRITICAL:** Denormalized fields are NOT populated in `interceptCreate` - fetch source data directly!
@@ -170,6 +170,9 @@ val createPost = path.path("posts").post bind ApiHttpHandler(
 ❌ Assume denormalized fields exist in interceptCreate
 ❌ Use `kotlin.time.DateTimeUnit` (use `kotlinx.datetime`)
 ❌ Forget @GenerateDataClassPaths on models
+❌ Allow users to update their own record without `updateRestrictions` — they can escalate `role` fields!
+❌ Forget MetaEndpoints — no health checks, no bulk API, no OpenAPI docs
+❌ Duplicate models across server/client — use a multiplatform `-shared` module instead
 
 ## When to Read This Skill
 

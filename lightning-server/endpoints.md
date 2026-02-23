@@ -269,6 +269,39 @@ object Server : ServerBuilder() {
 }
 ```
 
+## MetaEndpoints
+
+<!-- by Claude -->
+Always include `MetaEndpoints` in your server for health checks, bulk API, and OpenAPI documentation:
+
+```kotlin
+import com.lightningkite.lightningserver.typed.MetaEndpoints
+
+object Server : ServerBuilder() {
+    val database = setting("database", Database.Settings())
+    val cache = setting("cache", Cache.Settings())
+
+    // ... other endpoints ...
+
+    // MetaEndpoints provides:
+    // - GET /meta/online - simple health check (returns 200 if healthy)
+    // - GET /meta/health - detailed health with memory, CPU, service status
+    // - Bulk API endpoints for efficient batch operations
+    // - OpenAPI documentation
+    val meta = path.path("meta") module MetaEndpoints(
+        "com.yourcompany.yourproject",  // package name for schema generation
+        database,
+        cache
+    )
+}
+```
+
+**Why this matters:**
+- Without MetaEndpoints, the **bulk API is not available** (clients can't batch multiple requests)
+- Health endpoints are essential for load balancers and monitoring
+- OpenAPI documentation is generated from this
+- Package name parameter is used for schema generation
+
 ## Path Reference Pattern
 
 Always store endpoint references for testing and internal calls:

@@ -267,6 +267,8 @@ signals = { table ->
 
 **What it can do:**
 - ✅ Block specific fields from being modified
+- ✅ Conditionally allow field modification based on auth/permissions
+- ✅ Validate new values for conditionally modifiable fields
 - ✅ Enforced automatically by framework
 - ❌ Cannot throw custom exceptions (framework handles it)
 
@@ -274,8 +276,9 @@ signals = { table ->
 - Prevent modification of immutable fields (author, createdAt)
 - Enforce field-level access control
 - Prevent tampering with computed fields
+- **Restrict sensitive fields like `role` to prevent privilege escalation**
 
-**Example:**
+**Example - Basic (lock immutable fields):**
 ```kotlin
 ModelPermissions(
     // ...
@@ -285,6 +288,42 @@ ModelPermissions(
         it.organizationName.cannotBeModified() // Denormalized field locked
     }
 )
+```
+
+**Example - Conditional (role escalation prevention):**
+```kotlin
+// by Claude
+// ⚠️ SECURITY: Without updateRestrictions, users who can update themselves
+// can change their own `role` field to grant admin/root access!
+import com.lightningkite.services.database.updateRestrictions
+
+val info = database.modelInfo<User?, User, _>(
+    auth = UserAuth.require(),
+    permissions = {
+        // Roles this user is allowed to manage (at or below their level)
+        val allowedRoles = UserRole.entries.filter { it <= auth.userRole() }
+        val admin: Condition<User> =
+            if (auth.userRole() >= UserRole.Admin) condition { it.role inside allowedRoles } else Condition.Never
+        val self = condition<User> { it._id eq auth.id }
+
+        ModelPermissions(
+            create = admin,
+            read = admin or self,
+            update = admin or self,
+            // Role changes require admin permission AND value must be within allowed roles
+            updateRestrictions = updateRestrictions {
+                it.role.requires(admin) { it.inside(allowedRoles) }
+            },
+            delete = admin,
+        )
+    }
+)
+```
+
+**`.requires()` syntax:**
+- `.requires(condition) { valueCondition }` — modifying this field requires the condition to be met, AND the new value must satisfy the value condition
+- `.cannotBeModified()` — shorthand for completely blocking modification
+- Use `allowedRoles` pattern to ensure admins can only assign roles at or below their own level
 ```
 
 ### postChange
@@ -379,6 +418,50 @@ ModelPermissions(
     deleted.avatarFile?.let { fileService.delete(it) }
 }
 ```
+
+### postRawChanges (Batch Hook for All Changes)
+
+**When it runs:** After any create/update/delete, receives a batch of all changes
+
+**What it can do:**
+- ✅ Access both old and new values for every change in a batch
+- ✅ Efficiently handle side effects across multiple changes at once
+- ✅ Use batch database operations (getMany, insertMany)
+- ❌ Cannot stop the changes (already committed)
+
+**Use cases:**
+- Auto-creating related records from field values (e.g., tags referenced in entries)
+- Batch side effects that benefit from processing all changes together
+- Cross-table consistency when many records change at once
+
+**Example - Auto-create tags from entries:**
+```kotlin
+// by Claude
+signals = { table ->
+    table.postRawChanges {
+        // Collect all tags from newly created/updated entries
+        val newlyUsedTags = it.flatMapTo(HashSet()) { it.new?.tags ?: emptySet() }
+        if (newlyUsedTags.isEmpty()) return@postRawChanges
+
+        // Find which tags already exist
+        val existing = TagEndpoints.info.table().getMany(newlyUsedTags).map { it._id }.toSet()
+
+        // Insert only the truly new ones
+        val newTags = newlyUsedTags.minus(existing).map { Tag(it) }
+        if (newTags.isNotEmpty()) {
+            TagEndpoints.info.table().insertMany(newTags)
+        }
+    }
+}
+```
+
+**Key points:**
+- `it` is a `List<EntryChange<T>>` with `.old` (previous value or null) and `.new` (new value or null for deletes)
+- Use batch operations (`getMany`, `insertMany`) for efficiency — don't loop with individual queries
+- Access other tables via `OtherEndpoints.info.table()` (no auth needed inside signals)
+- Fires for creates, updates, AND deletes — check `.new` for null to detect deletes
+
+---
 
 ## Decision Tree: Which Hook to Use?
 

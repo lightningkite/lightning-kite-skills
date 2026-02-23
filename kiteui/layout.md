@@ -310,6 +310,23 @@ expanding.scrolling.card.col {
 }
 ```
 
+### Pitfall: `expanding` + `shownWhen` Order
+
+<!-- by Claude -->
+`shownWhen` creates a wrapper element. Modifiers **before** it affect the wrapper; modifiers **after** it affect the child inside.
+
+```kotlin
+// ❌ BROKEN: expanding is applied to the child inside the wrapper.
+// The shownWhen wrapper has flex-grow: 0 → collapses to height: 0px!
+shownWhen { !isLoading() }.expanding.recyclerView { ... }
+
+// ✅ CORRECT: expanding is applied to the shownWhen wrapper itself.
+// The wrapper gets flex-grow: 1 and takes available space.
+expanding.shownWhen { !isLoading() }.recyclerView { ... }
+```
+
+This applies to any layout modifier (`expanding`, `weight()`, `sizeConstraints()`, etc.) — always put them **before** `shownWhen` so they affect the wrapper, not the hidden child.
+
 ## Units and Dimensions
 
 ```kotlin

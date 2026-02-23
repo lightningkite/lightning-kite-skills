@@ -689,6 +689,43 @@ enum class OrderEventType {
 
 ---
 
+## Multiplatform Shared Models
+
+<!-- by Claude -->
+When a model is needed by both server (JVM) and client (JS/iOS), put it in a multiplatform `-shared` module rather than duplicating it.
+
+```kotlin
+// ❌ BAD: Separate server and client versions of the same model
+// Server has embedding field, client doesn't — diverges over time
+
+// ✅ GOOD: Single model in multiplatform -shared module (e.g., ai-shared)
+@GenerateDataClassPaths
+@Serializable
+public data class KnowledgeEntry(
+    override val _id: Uuid = Uuid.random(),
+    val label: String,
+    val content: String,
+    @VectorIndex(dimensions = 1536)
+    val embedding: Embedding? = null,  // Nullable — only set by server
+    val tags: Set<String> = emptySet(),
+    val summary: String? = null,
+    val source: String? = null,
+    val createdAt: Instant = Clock.System.now(),
+    val updatedAt: Instant = Clock.System.now(),
+) : HasId<Uuid>
+```
+
+**Key rules:**
+- Put shared models in a multiplatform module (e.g., `my-shared`) that compiles for all targets (JVM, JS, iOS)
+- Use `@GenerateDataClassPaths` so DataClassPath extensions are available everywhere
+- Make server-only fields **nullable with defaults** (e.g., `embedding: Embedding? = null`) — client creates entries without them, server populates them
+- Use `Clock.System.now()` as default for timestamps — cleaner than making them nullable
+- For vector/embedding fields, keep nullable (not empty) — vector indexes expect specific dimensions
+- After moving models, regenerate SDK: `./gradlew :yourserver:generateSdk`
+- Import from the shared module everywhere: `import com.yourcompany.shared.models.*`
+
+---
+
 ## Checklist for Model Review
 
 - [ ] No status/state enums - using timestamps for lifecycle instead?

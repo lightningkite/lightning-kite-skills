@@ -51,7 +51,7 @@ session.api.door.unlock(doorId)
 session.api.email.send(emailRequest)
 ```
 
-- Prefer using server-side filtering
+- Prefer using server-side filtering; use `Condition.andNotNull()` with `?.let {}` for multiple optional filters
 
 ```kotlin
 // ❌ WRONG - loads ALL data then filters client-side
@@ -61,6 +61,16 @@ val filtered = remember { allUsers().filter { it.name.contains(query()) } }
 val filtered = remember {
     session.users.list(Query(condition {
         it.name.contains(query(), ignoreCase = true)
+    }))()
+}
+
+// ✅ Multiple optional filters - Condition.andNotNull ignores nulls
+val items = remember {
+    session.items.list(Query(condition {
+        Condition.andNotNull(
+            tagFilter()?.let { tags -> it.tags any { t -> t inside tags } },
+            dateFrom()?.let { d -> it.date gte d },
+        )
     }))()
 }
 ```
@@ -181,6 +191,16 @@ val userDetails = rememberSuspending {
     session.users.get(id).await()  // Loading state shown automatically
 }
 ```
+
+### 9. Modifier order matters with `shownWhen`
+```kotlin
+// ❌ BROKEN - expanding applied to child inside wrapper; wrapper has flex-grow:0 → height:0!
+shownWhen { !isLoading() }.expanding.recyclerView { ... }
+
+// ✅ CORRECT - expanding applied to the shownWhen wrapper itself
+expanding.shownWhen { !isLoading() }.recyclerView { ... }
+```
+Layout modifiers (`expanding`, `weight()`, `sizeConstraints()`) must go **before** `shownWhen`, not after.
 
 ### 10. Theme switches create backgrounds
 ```kotlin

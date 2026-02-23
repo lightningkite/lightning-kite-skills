@@ -307,6 +307,49 @@ object MembersScreen : Page {
 - **Network efficiency**: Minimal data transfer
 - **Database optimization**: Uses database indexes for fast searches
 
+## Multi-Filter Pattern with `Condition.andNotNull()`
+
+<!-- by Claude -->
+When filtering list data based on multiple optional UI filters, use `Condition.andNotNull()` with `?.let {}` for clean server-side filtering:
+
+```kotlin
+val selectedTags = Signal<Set<String>>(emptySet())
+val projectFilter = Signal<Project?>(null)
+val dateFrom = Signal<LocalDate?>(null)
+
+val items = remember {
+    val s = currentSession() ?: throw PlainTextException("Not logged in")
+    val selected = selectedTags()
+    val project = projectFilter()
+    val from = dateFrom()
+
+    s.items.list(
+        query = Query(
+            condition = condition<MyItem> {
+                Condition.andNotNull(
+                    // Only add each filter when its Signal has a value
+                    selected.takeIf { it.isNotEmpty() }?.let { tags ->
+                        it.tags any { tag -> tag inside tags }
+                    },
+                    project?.let { p -> it.project eq p._id },
+                    from?.let { d -> it.date gte d },
+                )
+            },
+            limit = 50
+        ),
+        maximumAge = 5.minutes,
+        pullFrequency = 5.minutes
+    )
+}
+```
+
+**Key points:**
+- `Condition.andNotNull()` combines non-null conditions with AND, ignoring nulls
+- `filterValue()?.let { condition }` — only adds the condition when the filter is active
+- Reading Signals inside `remember { }` creates reactive dependencies — when a filter changes, the query re-executes
+- Server returns only matching results (efficient, scalable)
+- Common operators: `eq`, `inside`, `gte`/`lte`, `contains`, `any { }`
+
 ## Required Imports
 
 ```kotlin
