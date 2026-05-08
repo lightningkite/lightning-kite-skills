@@ -1,5 +1,5 @@
 ---
-name: Model Design
+name: model-design
 description: This skill should be used when designing data models for Lightning Server / Kotlin applications. Covers domain modeling patterns, database schema design, and Lightning Kite conventions.
 version: 1.0.0
 ---

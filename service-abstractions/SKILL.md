@@ -1,5 +1,5 @@
 ---
-name: Service Abstractions
+name: service-abstractions
 description: This skill should be used when the user asks about Service Abstractions library, infrastructure service management, or database/cache/file system configurations in Kotlin
 version: 1.0.0
 ---

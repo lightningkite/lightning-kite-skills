@@ -1,5 +1,5 @@
 ---
-name: KiteUI Theming
+name: kiteui-theming
 description: This skill should be used when the user asks about KiteUI themes, custom colors, fonts, semantic styling, or troubleshooting theme issues (colors not applying, fonts not loading, buttons not styled correctly)
 version: 1.0.0
 ---

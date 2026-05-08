@@ -1,5 +1,5 @@
 ---
-name: KiteUI / Lightning Server Combo Development
+name: lightning-server-kiteui
 description: This skill should be used when the user wants to work with KiteUI and Lightning Server together.
 version: 1.0.2
 ---

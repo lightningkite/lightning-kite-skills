@@ -1,5 +1,5 @@
 ---
-name: Lightning Server Development
+name: lightning-server
 description: IMPORTANT - Read this skill proactively when working on any file that imports from com.lightningkite.lightningserver. This skill covers Lightning Server framework, Kotlin server development, building APIs, database operations, authentication, and testing patterns.
 version: 1.3.0
 ---
@@ -161,6 +161,18 @@ val createPost = path.path("posts").post bind ApiHttpHandler(
     }
 )
 ```
+
+## Related Lightning Kite Libraries
+
+**CSV serialization** — `com.lightningkite:kotlinx-serialization-csv-durable` (catalog: `libs.csvDurable`). Source: `~/Projects/kotlinx-serialization-csv-durable/`. Multiplatform (JVM/JS/iOS/Android). Reach for this before hand-rolling CSV parse/escape — it works on any `@Serializable` type, with both eager and streaming APIs:
+
+```kotlin
+val csv = CsvFormat(StringDeferringConfig(EmptySerializersModule()))
+csv.encodeSequenceToAppendable(MyRow.serializer(), rows.asSequence(), writer)  // streaming
+val list = csv.decodeFromReader(ListSerializer(MyRow.serializer()), reader)    // eager
+```
+
+Field names become column headers; nullable scalars round-trip; nested structures fall back to JSON in a single cell.
 
 ## Anti-Patterns
 

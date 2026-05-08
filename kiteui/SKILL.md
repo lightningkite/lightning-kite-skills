@@ -1,5 +1,5 @@
 ---
-name: KiteUI Development
+name: kiteui
 description: This skill should be used when you are using KiteUI.
 version: 3.0.0
 ---
