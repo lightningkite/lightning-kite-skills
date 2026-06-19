@@ -133,10 +133,10 @@ launch {
     session.users[userId].set(user.copy(name = "New Name"))
 }
 
-// Insert new item
+// Insert new item — .add() returns the inserted T directly
 launch {
     val newUser = User(_id = Uuid.random(), name = "Alice", ...)
-    session.users.insert(newUser)
+    session.users.add(newUser)
     // Cache updated, all matching queries update automatically
 }
 ```
@@ -246,28 +246,30 @@ session.counters[counterId].modify(modification {
 - `ListAppend` / `ListRemove` - List operations
 - `SetAppend` / `SetRemove` - Set operations
 
-## ⚠️ `insert()` returns a `ModelCacheItemReadable<T>` wrapper, not the inserted item
+## Inserting items: use `.add()`, not `.insert()`
 
-`cache.insert(item)` (and the older alias `cache.add(item)`) returns a `ModelCacheItemReadable<T>` — a reactive wrapper — not the inserted item itself and not the `_id`. There is no `.result`, no `._id` on the return value.
+`.add(item): T` is the current insert method on `ModelCacheLike` — it returns the **inserted item** (`T`) directly, with any server-generated fields populated.
 
-If you need the id for navigation after insert, **construct the model with its `_id` before inserting** and reuse that id:
+`.insert(item)` is `@Deprecated("Use add instead")` and returns a `ModelCacheItemReadable<T>` wrapper — **not** the item. Do not use `.insert()` in new code.
+
+Because you must supply `_id` yourself, the simplest pattern is to construct the model with its `_id` before calling `.add()`, then reuse that id for navigation:
 
 ```kotlin
-// ❌ WRONG — .insert() return value has no ._id
+// ❌ WRONG — .insert() is deprecated; its return value is a readable wrapper with no ._id
 val result = session.listings.insert(listing)
 pageNavigator.replace(DetailPage(result._id.toString()))  // Compile error
 
-// ✅ CORRECT — use the id you put into the model
+// ✅ CORRECT — .add() returns the item; construct _id before inserting
 val listing = Listing(
     _id = Listing.ID(Uuid.random()),
     title = titleVal,
     // ...
 )
-session.listings.insert(listing)
+session.listings.add(listing)
 pageNavigator.replace(DetailPage(listing._id.toString()))  // works
 ```
 
-Verified in: CreateListingScreen.kt (ls-kiteui-starter marketplace demo, iter 2).
+Verified in: `ModelCacheLike.kt` in lightning-server-kiteui (`.add()` declared; `.insert()` has `@Deprecated`); iter4 TaskBoardScreen.kt uses `.add()`.
 
 ## Server-Side Search Pattern
 

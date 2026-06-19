@@ -96,6 +96,9 @@ launch {
     session.users[userId].modify(modification { it.name assign "New Name" })
 }
 
+// Insert new item — .add() returns the inserted T
+launch { session.tasks.add(Task(_id = Task.ID(Uuid.random()), ...)) }
+
 // Search with debounce
 val searchDebounced = searchQuery.debounce(500)
 val results = remember {
@@ -212,6 +215,74 @@ field("Server") {
 `field()` requires an explicit import (`l2.*` star import does NOT resolve it reliably). It applies `fieldTheme` automatically and wires accessibility `labelFor`. Pattern A is simpler and always works.
 
 Verified: ChannelListScreen.kt (Pattern A), LoginScreen.kt (Pattern B) on master.
+
+### P5. `expanded.centered.text { }` fails — `expanding` returns `CanAddWeight`, not `CanAddAlignment`
+
+`expanding` is defined on `ElementWriter.CanAddWeight` and returns `CanAddWeight`. But `centered` is defined on `ElementWriter.CanAddAlignment` (a supertype of `CanAddWeight`). Result: you cannot chain `.centered` directly after `.expanding`.
+
+Wrap the expanding view in a `col {}` first, then use `centered` inside it:
+
+```kotlin
+// ❌ WRONG — compile error: centered not available on CanAddWeight
+expanding.centered.text { ::content { org()?.name ?: "…" } }
+
+// ✅ CORRECT — col provides the CanAddAlignment context for centered
+expanding.col {
+    centered.text { ::content { org()?.name ?: "…" } }
+}
+```
+
+Verified: `ElementWriter.kt` in KiteUI source (`expanding` is `val CanAddWeight.expanding get() = weight(1f)`; `centered` is `val CanAddAlignment.centered`); iter4 OrgListScreen and TaskBoardScreen both use `expanding.col { centered.text { } }`.
+
+### P6. Use `.add()` to insert items into ModelCache — `.insert()` is deprecated
+
+`.add(item): T` is the current insert method on `ModelCacheLike`. It returns the inserted `T` directly.
+
+`.insert(item)` is `@Deprecated("Use add instead")` and returns a `ModelCacheItemReadable<T>` wrapper — not the item.
+
+```kotlin
+// ❌ OLD / DEPRECATED
+session.listings.insert(listing)
+
+// ✅ CORRECT — returns the inserted item as T
+session.listings.add(listing)
+```
+
+When you need the item's id for navigation after insert, construct the model with `_id` before calling `.add()` and reuse that id:
+
+```kotlin
+val task = Task(_id = Task.ID(Uuid.random()), organization = orgId, title = title, ...)
+session.tasks.add(task)
+pageNavigator.replace(TaskDetailPage(task._id))  // use the id you assigned
+```
+
+Verified: `ModelCacheLike.kt` in lightning-server-kiteui; iter4 TaskBoardScreen.kt uses `.add()`.
+
+### P7. `select` + async server write — use `.withWrite { }` to adapt a `Reactive<T>` into `MutableReactive<T>`
+
+`select.bind()` requires a `MutableReactive<T>`. A server-backed value (e.g. `session.tasks[id]()`) is a `Reactive<T>`, not `MutableReactive<T>`, so you cannot bind it directly to a `select`.
+
+The `Reactive<T>.withWrite { value -> ... }` extension (from `com.lightningkite.reactive.extensions`) wraps any `Reactive<T>` into a `MutableReactive<T>` by supplying the write action:
+
+```kotlin
+import com.lightningkite.reactive.extensions.withWrite
+
+// Bind a select to a server-backed field, writing back via modify()
+val statusBinding = taskReactive.withWrite { newStatus ->
+    session().tasks[taskReactive()._id].modify(
+        modification<Task> { it.status assign newStatus }
+    )
+}
+select {
+    bind(statusBinding, Constant(TaskStatus.entries)) { it.name }
+}
+```
+
+**Note on loading states:** `taskReactive` must resolve (not be in a loading state) when the user interacts with the select. Wrap in `shownWhen { taskReactive.state.success }` if needed.
+
+If `withWrite` feels too complex for the use case (e.g. a status transition grid), per-value buttons with `Action` lambdas calling `.modify()` directly are the simpler and equally idiomatic fallback — see iter4 TaskBoardScreen.kt for a working example.
+
+Verified: `Select.kt` (`bind` requires `MutableReactive<T>`); `helpers.kt` in reactive library (`withWrite` definition).
 
 ### 0. Action lambda has NO element/context receiver — capture context before defining it
 
@@ -416,7 +487,7 @@ card.text("Content")  // Two separate cards!
 
 ```kotlin
 import com.lightningkite.kiteui.*
-import com.lightningkite.kiteui.models.*
+import com.lightningkite.kiteui.models.*      // Icon, KeyboardHints, rem, Align, etc.
 import com.lightningkite.kiteui.navigation.*
 import com.lightningkite.kiteui.reactive.*
 import com.lightningkite.kiteui.views.*
@@ -431,6 +502,8 @@ import com.lightningkite.reactive.lensing.validation.*
 import com.lightningkite.serialization.*
 import kotlinx.coroutines.*
 ```
+
+`com.lightningkite.kiteui.models.*` is required for `Icon`, `KeyboardHints`, `rem`, and alignment constants — these are NOT in `kiteui.*` or `views.*`. Verified: both `Icon` and `KeyboardHints` are `data class` in `com.lightningkite.kiteui.models` (source: `library/src/commonMain/kotlin/com/lightningkite/kiteui/models/data.kt`).
 
 ### ⚠️ Imports the `*` star-imports do NOT pull in — add these explicitly
 

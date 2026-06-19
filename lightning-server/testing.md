@@ -1,5 +1,28 @@
 # Testing
 
+## Manual curl / REST Route Convention
+
+Lightning Server REST routes follow the pattern `/model-plural/<action>`, **not** `/model-plural/rest/<action>`. When curling the running server:
+
+```bash
+# List (query)
+curl -X POST http://localhost:8080/tasks/query -H 'Content-Type: application/json' -d '{}'
+
+# Get by id
+curl http://localhost:8080/tasks/<id>
+
+# Insert
+curl -X POST http://localhost:8080/tasks -H 'Content-Type: application/json' -d '{...}'
+
+# Modify
+curl -X PATCH http://localhost:8080/tasks/<id> -H 'Content-Type: application/json' -d '{...}'
+
+# Delete
+curl -X DELETE http://localhost:8080/tasks/<id>
+```
+
+There is no `/rest/` segment — the REST sub-path is mounted directly at the model's path.
+
 ## Practical Testing Patterns
 
 ```kotlin
