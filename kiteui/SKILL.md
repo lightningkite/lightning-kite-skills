@@ -516,6 +516,8 @@ These must be added manually even when using the star-imports above. Missing any
 | `import com.lightningkite.kiteui.reactive.Action` | The `Action("label") { ... }` class for button `.action` assignments. |
 | `import com.lightningkite.kiteui.views.l2.toast` | `context.toast("...")` helper. Lives in `l2`, not covered by `kiteui.*`. |
 | `import com.lightningkite.kiteui.requestFile` | `context.requestFile(...)` for file pickers. |
+| `import com.lightningkite.kiteui.exceptions.PlainTextException` | User-facing validation errors thrown in `Action` lambdas. Not in any star import. `throw PlainTextException("message", "Title")`. |
+| `import com.lightningkite.kiteui.locale.renderToString` | `Instant.renderToString()` and `LocalDateTime.renderToString()` for human-readable date display. Lives in `kiteui.locale`, not covered by `kiteui.*`. |
 | `import com.lightningkite.<yourpkg>.path` (+ individual path members) | KSP-generated path extensions live in the **model's package**. View files in a subpackage don't inherit them. Import both the `path` object and individual field accessors you use (e.g. `import com.lightningkite.lskiteuistarter.createdAt`). |
 
 Quick recipe — add these to every view file that uses actions, toasts, file picking, or sorts:
@@ -679,11 +681,67 @@ switch { checked bind isEnabled }
 radioToggleButton { checked bind selected.equalTo(0) }
 select { bind(selectedValue, options) { it } }
 
-// Icons (from Material Design paths, though a limited subset)
+// Icons (Material Design paths, but a LIMITED subset — check source before assuming one exists)
+// Available: home, search, add, delete, settings, done, arrowBack, chevronRight, chevronLeft,
+//   menu, close, logout, login, moreHoriz, moreVert, deleteForever, remove, download, sync,
+//   block, sort, filterList, star, starFilled, person, group, warning, send, chat, list,
+//   notification, notificationFilled, email, certification, copy, lightMode, darkMode,
+//   info, externalLink, expand, collapse, passkey, upload, dot, help
+// ❌ No calendar/event icon (Icon.event does not exist) — use Icon.star or Icon.list as fallback
+// Source: library/src/commonMain/kotlin/com/lightningkite/kiteui/models/data.kt
 icon(Icon.home, "Home")
 icon { source = AppIcons.custom; description = "Custom" }
 icon(Icon.home.copy(width = 3.rem, height = 3.rem), "Home")  // Huge icon
 ```
+
+### Date & time inputs
+
+**Widget:** `localDateTimeField` — binds to `Signal<LocalDateTime?>` (from `kotlinx.datetime`).
+
+```kotlin
+import kotlinx.datetime.*
+import com.lightningkite.kiteui.locale.renderToString  // for display
+
+// 1. Declare local state as LocalDateTime?
+val startsAt = Signal<LocalDateTime?>(null)
+
+// 2. Render the picker (wrap in fieldTheme for consistent styling)
+col {
+    subtext("Date & Time")
+    fieldTheme.localDateTimeField {
+        content bind startsAt
+    }
+}
+
+// 3. Convert to Instant for storage (models store Instant, not LocalDateTime)
+val instant = startsAt() ?: throw PlainTextException("Pick a date and time", "Missing")
+val stored: Instant = instant.toInstant(TimeZone.currentSystemDefault())
+
+// 4. Convert back to LocalDateTime for editing
+val forEdit: LocalDateTime = storedInstant.toLocalDateTime(TimeZone.currentSystemDefault())
+
+// 5. Display Instant as human-readable string
+subtext { ::content { event().startsAt.renderToString() } }
+// renderToString() is an extension on Instant in com.lightningkite.kiteui.locale
+// Signature: fun Instant.renderToString(size: RenderSize = RenderSize.Full, zone: TimeZone = TimeZone.currentSystemDefault(), ...): String
+```
+
+**Filtering/sorting by date:**
+```kotlin
+import kotlin.time.Clock  // for now()
+
+val now = Clock.System.now()
+val upcomingEvents = remember {
+    session().events.list(
+        Query(
+            condition<Event> { it.startsAt gte now },
+            orderBy = listOf(SortPart(Event.path.startsAt, ascending = true))
+        )
+    )()
+}
+```
+
+Verified: CreateEventScreen.kt, EventsScreen.kt (demo/iter5-events); `LocalDateTimeField.kt` in KiteUI source (`content: MutableReactiveValue<LocalDateTime?>`); `LocalTimeRender.kt` (renderToString on Instant/LocalDateTime in `com.lightningkite.kiteui.locale`).
 
 ---
 

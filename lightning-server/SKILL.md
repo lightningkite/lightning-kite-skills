@@ -176,9 +176,9 @@ Field names become column headers; nullable scalars round-trip; nested structure
 
 ## ⚠️ CRITICAL PITFALLS
 
-### ModelRestEndpoints operation names
+### ModelRestEndpoints operation names + WebSocket combine FOOTGUN
 
-Quick reference — use these exact names when calling endpoints in tests or when referencing them programmatically:
+Quick reference — use these exact names when calling endpoints in tests or referencing them programmatically:
 
 | Operation | Property name | Notes |
 |-----------|--------------|-------|
@@ -190,16 +190,43 @@ Quick reference — use these exact names when calling endpoints in tests or whe
 | Bulk delete | `.bulkDelete` | |
 | Insert many | `.insertBulk` | |
 
-In tests, when `rest` is a **plain `ModelRestEndpoints`**, access ops directly:
+#### ⚠️ FOOTGUN: combining with WebSocket moves ops under `.rest.endpoints.<op>`
+
+When you add `ModelRestUpdatesWebsocket` to an endpoint via `+`, the combined type is `ModelRestEndpointsAndUpdatesWebsocket`. **The REST operations are no longer directly on `.rest` — they move under `.rest.endpoints.<op>`.**
+
+**The danger:** both forms compile without error. The wrong form silently targets the wrong object and produces NotFoundException (or no-op) at runtime. No compiler warning. This has cost builders 20+ minutes.
+
 ```kotlin
+// Endpoint definition:
+val rest = path include ModelRestEndpoints(info) + ModelRestUpdatesWebsocket(info)
+// ↑ rest is ModelRestEndpointsAndUpdatesWebsocket — ops are under .rest.endpoints.*
+
+// ❌ WRONG — compiles fine, but .rest.<op> is the wrong accessor; throws at runtime
+EventEndpoints.rest.insert.test(auth, event)
+EventEndpoints.rest.list.test(auth, Query())
+
+// ✅ CORRECT — ops live under .rest.endpoints.<op>
+EventEndpoints.rest.endpoints.insert.test(auth, event)
+EventEndpoints.rest.endpoints.list.test(auth, Query())
+EventEndpoints.rest.endpoints.modify.test(id, auth, modification { ... })
+EventEndpoints.rest.endpoints.deleteItem.test(id, auth, Unit)
+```
+
+Compare with a **plain `ModelRestEndpoints`** (no WebSocket):
+```kotlin
+// Endpoint definition:
+val rest = path include ModelRestEndpoints(info)
+// ↑ rest is ModelRestEndpoints — ops are directly on .rest.*
+
+// ✅ CORRECT for plain ModelRestEndpoints
 MessageEndpoints.rest.insert.test(auth, message)
 MessageEndpoints.rest.modify.test(id, auth, modification { ... })
 MessageEndpoints.rest.deleteItem.test(id, auth, Unit)
 ```
 
-When `rest` combines with `ModelRestUpdatesWebsocket`, ops live under `.rest.endpoints.<op>` — see testing.md for details.
+**Rule of thumb:** look at the endpoint definition. If you see `ModelRestEndpoints(info) + ModelRestUpdatesWebsocket(info)`, every test/programmatic call needs `.rest.endpoints.<op>`. If it's just `ModelRestEndpoints(info)`, use `.rest.<op>` directly.
 
-Verified: ModelRestEndpoints.kt in lightning-server/typed/ source.
+Verified: EventEndpoints.kt (demo/iter5-events) uses the `+` combine form; testing.md shows both forms in detail.
 
 ### `postPermissionsForUser` — receiver context and imports
 

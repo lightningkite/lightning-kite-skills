@@ -425,6 +425,20 @@ When items are deleted from a limited query (e.g., `limit = 10`), the cache does
 **Bulk Modifications:**
 `cache.bulkModify()` clears ALL caches because it can't know which items were affected. This is intentionally aggressive to avoid serving stale data.
 
+**Denormalized fields look stale on detail pages after cross-table mutations:**
+When a server-side `registerChangeListener` mutates a denormalized field on model A in response to a change on model B (e.g., `Event.goingCount` incremented when an `EventRsvp` is created), the individual item read `session().events[eventId]()` does **not** receive a WebSocket push for that update. The ModelCache item for the event is not notified because the event itself was not the target of any client-visible write — the RSVP endpoint triggered it server-side.
+
+The result: the detail page shows a stale `goingCount` until the cache's next poll (default 60 seconds) or a page reload.
+
+A **list query subscription** (`session().events.list(Query(...))()` on an endpoint with `ModelRestUpdatesWebsocket`) **does** receive the updated event and shows the correct count.
+
+**Workaround options:**
+1. On the list page: use `ModelRestUpdatesWebsocket` — the list subscription refreshes automatically and the correct value appears there.
+2. On the detail page: add a manual refresh button, or reduce `pullFrequency` on that specific item (e.g., `session().events.item(id, pullFrequency = 10.seconds)()`).
+3. Architectural: avoid denormalized counts on detail pages if freshness is critical; re-query the source table instead (e.g., count RSVPs client-side from the RSVP list).
+
+Verified: observed in iter-5 events demo (struggle-log.md issue #6) — RSVP creation incremented `goingCount` server-side via `registerChangeListener`; list page updated correctly, detail page was stale.
+
 ## Summary
 
 **Use ModelCache for CRUD operations** (queries, gets, modifications) - it provides caching, reactivity, and automatic UI updates.
