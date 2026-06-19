@@ -108,6 +108,33 @@ val results = remember {
 
 ## ⚠️ CRITICAL PITFALLS (Read First!)
 
+### 0. Action lambda has NO element/context receiver — capture context before defining it
+
+`Action("label") { ... }` is `suspend CoroutineScope.() -> Unit`. Unlike `onClick {}`, it does NOT have `ElementWriter` or `ElementContext` as a receiver, so `context`, `toast(...)`, and `pageNavigator` are out of scope inside it.
+
+**Pattern:** capture `val elementContext = this.context` (inside the `ElementWriter` scope) **before** the `Action`, then use `elementContext` inside the lambda.
+
+```kotlin
+override fun ElementWriter.CanAddTheme.render() {
+    // Capture context for Action lambdas — must be done OUTSIDE the Action
+    val elementContext = this.context
+
+    button {
+        text("Save")
+        action = Action("Save") {
+            // ✅ Use captured context
+            elementContext.toast("Saved!")
+            elementContext.pageNavigator.goBack()
+            // ❌ 'context' and 'toast(...)' are NOT in scope here
+        }
+    }
+}
+```
+
+Contrast: `onClick {}` DOES have `ElementContext` as receiver, so `context` and `pageNavigator` work directly there.
+
+Verified in: CreateListingScreen.kt, ListingDetailScreen.kt, EditListingScreen.kt (ls-kiteui-starter marketplace demo, iter 2).
+
 ### 1. V7 uses DOT notation, NOT dash
 ```kotlin
 // ✅ V7 CORRECT
@@ -300,22 +327,33 @@ import com.lightningkite.serialization.*
 import kotlinx.coroutines.*
 ```
 
-### Critical: `invoke` import for reading reactives inside suspend lambdas
+### ⚠️ Imports the `*` star-imports do NOT pull in — add these explicitly
+
+These must be added manually even when using the star-imports above. Missing any one of them produces confusing, unrelated-looking errors.
+
+| Import | Why you need it |
+|--------|----------------|
+| `import com.lightningkite.reactive.context.invoke` | Read a `Reactive<T>` as a function (e.g. `session()`) inside `onClick {}` or any suspend lambda. Without it you get a cascade of ~20 unresolved-reference errors that don't mention this import. |
+| `import com.lightningkite.reactive.context.reactive` | The `reactive {}` builder. `context.*` does NOT cover it. |
+| `import com.lightningkite.kiteui.reactive.Action` | The `Action("label") { ... }` class for button `.action` assignments. |
+| `import com.lightningkite.kiteui.views.l2.toast` | `context.toast("...")` helper. Lives in `l2`, not covered by `kiteui.*`. |
+| `import com.lightningkite.kiteui.requestFile` | `context.requestFile(...)` for file pickers. |
+| `import com.lightningkite.<yourpkg>.path` (+ individual path members) | KSP-generated path extensions live in the **model's package**. View files in a subpackage don't inherit them. Import both the `path` object and individual field accessors you use (e.g. `import com.lightningkite.lskiteuistarter.createdAt`). |
+
+Quick recipe — add these to every view file that uses actions, toasts, file picking, or sorts:
 
 ```kotlin
-import com.lightningkite.reactive.context.invoke
-```
-
-Without this import, calling a `Reactive<T>` as a function (e.g. `session()`, `postReactive()`) inside `onClick {}` or any suspend lambda resolves to the wrong `invoke` overload and produces a **cascade of ~20 unrelated "Unresolved reference" errors** — none of which point at the missing import.
-
-**Troubleshooting:** If you see many unresolved references inside an `onClick {}` block or other suspend lambda, and those references are otherwise valid (session, model fields, etc.), add this import first. The `com.lightningkite.reactive.context.*` star import does NOT pull in this specific overload.
-
-```kotlin
-// All KiteUI view files should include:
 import com.lightningkite.reactive.context.invoke
 import com.lightningkite.reactive.context.reactive
-import com.lightningkite.reactive.core.*
+import com.lightningkite.kiteui.reactive.Action
+import com.lightningkite.kiteui.views.l2.toast
+import com.lightningkite.kiteui.requestFile
+// Plus model path imports for your package:
+import com.lightningkite.lskiteuistarter.path
+import com.lightningkite.lskiteuistarter.createdAt  // (and other fields you use)
 ```
+
+**Troubleshooting:** Many unresolved references inside `onClick {}` or `Action {}` that look like valid symbols → add `import com.lightningkite.reactive.context.invoke` first.
 
 ---
 

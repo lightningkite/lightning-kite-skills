@@ -550,6 +550,25 @@ semanticOverrides = SemanticOverrides(
 
 Use in views with `onNext(ThemeDerivation { it[MyCustomSemantic] })` or create a view modifier extension.
 
+### ⚠️ `Semantic` is an abstract class — can't use `object : Semantic` trivially; prefer built-ins for selected state
+
+`Semantic` is declared as `abstract class Semantic(val key: String)`. You can extend it with `data object`, but for selected/active-state theming you rarely need a custom semantic — use the built-in `ImportantSemantic` with `dynamicThemed` instead.
+
+**`dynamicThemed`, not `dynamicTheme`** — the function is `dynamicThemed { ... }` (note the `d`):
+
+```kotlin
+// ✅ CORRECT — toggle between ImportantSemantic and no-op based on state
+button {
+    dynamicThemed { if (selectedCategory() == cat) ImportantSemantic else ThemeDerivation.None }
+    text(cat.name)
+    onClick { selectedCategory.value = cat }
+}
+```
+
+This is the standard pattern for filter chips, category tabs, or any button that should look "selected" when active.
+
+Verified in: BrowseListingsScreen.kt (ls-kiteui-starter marketplace demo, iter 2).
+
 **Best Practice**: Prefer reusing existing semantics when semantically appropriate:
 - Use `SelectedSemantic` for active/selected states
 - Use `ImportantSemantic` for primary actions

@@ -136,7 +136,7 @@ launch {
 // Insert new item
 launch {
     val newUser = User(_id = Uuid.random(), name = "Alice", ...)
-    session.users.add(newUser)
+    session.users.insert(newUser)
     // Cache updated, all matching queries update automatically
 }
 ```
@@ -245,6 +245,29 @@ session.counters[counterId].modify(modification {
 - `increment` / `decrement` - Math operations
 - `ListAppend` / `ListRemove` - List operations
 - `SetAppend` / `SetRemove` - Set operations
+
+## ⚠️ `insert()` returns a `ModelCacheItemReadable<T>` wrapper, not the inserted item
+
+`cache.insert(item)` (and the older alias `cache.add(item)`) returns a `ModelCacheItemReadable<T>` — a reactive wrapper — not the inserted item itself and not the `_id`. There is no `.result`, no `._id` on the return value.
+
+If you need the id for navigation after insert, **construct the model with its `_id` before inserting** and reuse that id:
+
+```kotlin
+// ❌ WRONG — .insert() return value has no ._id
+val result = session.listings.insert(listing)
+pageNavigator.replace(DetailPage(result._id.toString()))  // Compile error
+
+// ✅ CORRECT — use the id you put into the model
+val listing = Listing(
+    _id = Listing.ID(Uuid.random()),
+    title = titleVal,
+    // ...
+)
+session.listings.insert(listing)
+pageNavigator.replace(DetailPage(listing._id.toString()))  // works
+```
+
+Verified in: CreateListingScreen.kt (ls-kiteui-starter marketplace demo, iter 2).
 
 ## Server-Side Search Pattern
 
