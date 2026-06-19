@@ -121,6 +121,54 @@ First run generates `settings.json`:
 }
 ```
 
+## SortPart: Use `Model.path.field`, not `Model_field`
+
+`SortPart` takes a `DataClassPath`, not a `SerializableProperty`. The generated `Model_field` symbol is a `SerializableProperty` — the wrong type. Always use the `.path.` accessor:
+
+```kotlin
+// ❌ WRONG — compile error: type mismatch (SerializableProperty vs DataClassPath)
+orderBy = listOf(SortPart(Post_createdAt, ascending = false))
+
+// ✅ CORRECT
+orderBy = listOf(SortPart(Post.path.createdAt, ascending = false))
+```
+
+## Disambiguating conditions with multiple models in scope
+
+When multiple model types are in scope (e.g. in a custom endpoint body that works with `Post`, `Follow`, `Like`), the `condition {}` lambda can fail to infer the type. Use an explicit type parameter and/or explicit lambda parameter name:
+
+```kotlin
+// ✅ Explicit type parameter
+condition<Follow> { it.follower eq auth.id }
+
+// ✅ Explicit lambda param (also helps with nested conditions)
+condition<Post> { post -> post.author inside followedIds }
+```
+
+## Field naming: avoid `post` — conflicts with HTTP routing verb
+
+Do not name a model field `post` (e.g. `data class Like(val post: Post.ID)`). The generated `DataClassPath.post` collides with the `com.lightningkite.lightningserver.http.post` HTTP routing extension, causing an ambiguous reference compile error. Use `postId` or another unambiguous name instead:
+
+```kotlin
+// ❌ WRONG — generates DataClassPath.post which conflicts with http.post verb
+data class Like(val post: Post.ID, ...)
+
+// ✅ CORRECT
+data class Like(val postId: Post.ID, ...)
+```
+
+## Email helper import
+
+The correct import for `toEmailAddress` is from Service Abstractions:
+
+```kotlin
+// ✅ CORRECT
+import com.lightningkite.services.data.toEmailAddress
+
+// ❌ WRONG — does not exist at this path
+import com.lightningkite.toEmailAddress
+```
+
 ## Anti-Patterns
 
 ❌ **Don't manually create CRUD endpoints** - Use ModelRestEndpoints instead

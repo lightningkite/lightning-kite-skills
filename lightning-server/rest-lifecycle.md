@@ -632,6 +632,30 @@ val reservationInfo = database.modelInfo(
 
 ## Common Pitfalls
 
+**`auth` is NOT in scope inside the `signals` lambda:**
+
+The `signals` lambda receives `table` but does NOT have `auth` in scope. Anything that needs to check or use the authenticated user's identity (e.g., "force follower field to equal current user") belongs in `postPermissionsForUser`, which does have `auth`:
+
+```kotlin
+// ❌ WRONG — auth is not in scope in signals
+signals = { table ->
+    table.interceptCreate { follow ->
+        if (follow.follower != auth.id) { /* compile error: auth unresolved */ }
+        follow
+    }
+}
+
+// ✅ CORRECT — auth-aware validation goes in postPermissionsForUser
+postPermissionsForUser = { table ->
+    table.interceptCreate { follow ->
+        if (follow.follower != auth.id) {
+            throw com.lightningkite.lightningserver.BadRequestException("You can only create follows for yourself")
+        }
+        follow
+    }
+}
+```
+
 **Accessing denormalized fields in interceptCreate:**
 ```kotlin
 .interceptCreate { request ->

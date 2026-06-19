@@ -96,6 +96,34 @@ Server.typedEndpoint.test(auth = null, input = RequestData(...))
 Server.typedEndpoint.test("pathArg", auth = null, input = RequestData(...))
 ```
 
+## Endpoint Access in Tests: `.endpoints` vs direct
+
+How you access REST endpoints in tests depends on whether the endpoint object combines `ModelRestEndpoints` with `ModelRestUpdatesWebsocket`:
+
+**Plain `ModelRestEndpoints`** (e.g. `OrganizationEndpoints`, `MembershipEndpoints`, `PostEndpoints`):
+```kotlin
+val rest = path include ModelRestEndpoints(info)
+// Access directly:
+OrganizationEndpoints.rest.detail.test(org._id, auth, Unit)
+OrganizationEndpoints.rest.list.test(auth, Query<Organization>())
+MembershipEndpoints.rest.insert.test(auth, membership)
+```
+
+**`ModelRestEndpoints + ModelRestUpdatesWebsocket`** (combines into `ModelRestEndpointsAndUpdatesWebsocket`):
+```kotlin
+// UserEndpoints in the starter:
+val rest = path.path("rest") include ModelRestEndpoints(info) + ModelRestUpdatesWebsocket(info, User_email)
+// The combined type wraps the REST endpoints under .endpoints:
+UserEndpoints.rest.endpoints.detail.test(userId, auth, Unit)
+UserEndpoints.rest.endpoints.list.test(auth, Query<User>())
+UserEndpoints.rest.endpoints.modify.test(userId, auth, modification { it.name assign "New" })
+```
+
+The delete operation on a `ModelRestEndpoints` is `.deleteItem`, not `.delete`:
+```kotlin
+SomeEndpoints.rest.deleteItem.test(id, auth, Unit)
+```
+
 ## Common Testing Pitfalls
 
 ### Duplicate UploadEarlyEndpoint Declarations

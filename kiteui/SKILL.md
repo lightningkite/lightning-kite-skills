@@ -202,7 +202,67 @@ expanding.shownWhen { !isLoading() }.recyclerView { ... }
 ```
 Layout modifiers (`expanding`, `weight()`, `sizeConstraints()`) must go **before** `shownWhen`, not after.
 
-### 10. Theme switches create backgrounds
+### 10. Buttons have no `text` property — nest a `text {}` call
+
+```kotlin
+// ❌ WRONG - button has no .text property
+button { text = "Click me" }
+
+// ✅ CORRECT - nest text() inside button
+button {
+    text("Click me")
+    onClick { /* ... */ }
+}
+
+// ✅ CORRECT - reactive button label
+button {
+    text { ::content { postReactive().authorName } }
+    onClick { context.pageNavigator.navigate(UserProfilePage(postReactive().author)) }
+}
+```
+
+### 11. Private helper functions need `ElementWriter.CanAddTheme` receiver
+
+Helper functions that call layout/theme elements (`card`, `col`, `row`, `text`, `subtext`, etc.) need `ElementWriter.CanAddTheme` as receiver, not plain `ElementWriter`. Using `ElementWriter` causes "unresolved reference" errors for theme modifiers.
+
+```kotlin
+// ❌ WRONG - plain ElementWriter has no theme modifiers
+private fun ElementWriter.postCard(postReactive: Reactive<Post>) {
+    card.col { /* ... */ }  // 'card' unresolved!
+}
+
+// ✅ CORRECT
+private fun ElementWriter.CanAddTheme.postCard(session: Reactive<UserSession?>, postReactive: Reactive<Post>) {
+    card.col {
+        text { ::content { postReactive().content } }
+    }
+}
+```
+
+### 12. `expanding` + `scrolling.col {}` in render() — wrap in a `col {}` first
+
+When `expanding.scrolling.col {}` appears as a top-level statement in `render()`, the `expanding` modifier needs a parent flex container to work correctly. Wrap the whole page in a `col {}` first:
+
+```kotlin
+// ❌ Can fail — expanding has nowhere to expand into
+override fun ElementWriter.CanAddTheme.render() {
+    expanding.scrolling.col {
+        forEachById(posts, id = { it._id }) { /* ... */ }
+    }
+}
+
+// ✅ CORRECT — outer col provides the flex context
+override fun ElementWriter.CanAddTheme.render() {
+    col {
+        card.col { h2("Feed") }
+        expanding.scrolling.col {
+            forEachById(posts, id = { it._id }) { /* ... */ }
+        }
+    }
+}
+```
+
+### 13. Theme switches create backgrounds
 ```kotlin
 // Creates background (switches from default to important)
 important.button { text("Save") }
@@ -238,6 +298,23 @@ import com.lightningkite.reactive.lensing.*
 import com.lightningkite.reactive.lensing.validation.*
 import com.lightningkite.serialization.*
 import kotlinx.coroutines.*
+```
+
+### Critical: `invoke` import for reading reactives inside suspend lambdas
+
+```kotlin
+import com.lightningkite.reactive.context.invoke
+```
+
+Without this import, calling a `Reactive<T>` as a function (e.g. `session()`, `postReactive()`) inside `onClick {}` or any suspend lambda resolves to the wrong `invoke` overload and produces a **cascade of ~20 unrelated "Unresolved reference" errors** — none of which point at the missing import.
+
+**Troubleshooting:** If you see many unresolved references inside an `onClick {}` block or other suspend lambda, and those references are otherwise valid (session, model fields, etc.), add this import first. The `com.lightningkite.reactive.context.*` star import does NOT pull in this specific overload.
+
+```kotlin
+// All KiteUI view files should include:
+import com.lightningkite.reactive.context.invoke
+import com.lightningkite.reactive.context.reactive
+import com.lightningkite.reactive.core.*
 ```
 
 ---

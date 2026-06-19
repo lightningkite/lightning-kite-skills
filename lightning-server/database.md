@@ -205,6 +205,66 @@ suspend fun postDelete(project: Project) {
 - Use `updateManyIgnoringResult` for performance (skips fetching updated records)
 - Use `deleteManyIgnoringOld` for performance (skips fetching deleted records)
 
+## Cross-Table Denormalized Updates with `registerChangeListener`
+
+For keeping a denormalized counter or field in sync across tables (e.g., `Post.likeCount` when a `Like` is created or deleted), use `info.registerChangeListener` in an `init {}` block of the endpoint object. This callback has a `context(ServerRuntime)` available.
+
+**Do NOT use `signals` postCreate/postDelete for this** — those callbacks don't carry the necessary `ServerRuntime` context for cross-table writes.
+
+```kotlin
+object LikeEndpoints : ServerBuilder() {
+    val info = Server.database.modelInfo(
+        auth = UserAuth.require(),
+        permissions = { /* ... */ }
+    )
+
+    init {
+        // registerChangeListener has ServerRuntime in context; signals callbacks do not
+        info.registerChangeListener { changes ->
+            changes.changes.forEach { change ->
+                when {
+                    change.old == null && change.new != null -> {
+                        // Like created: increment post like count
+                        PostEndpoints.info.table().updateOneIgnoringResult(
+                            condition<Post> { it._id eq change.new!!.postId },
+                            modification { it.likeCount += 1 }
+                        )
+                    }
+                    change.old != null && change.new == null -> {
+                        // Like deleted: decrement
+                        PostEndpoints.info.table().updateOneIgnoringResult(
+                            condition<Post> { it._id eq change.old!!.postId },
+                            modification { it.likeCount += -1 }
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    val rest = path include ModelRestEndpoints(info)
+}
+```
+
+**Key points:**
+- `registerChangeListener` is called in an `init {}` block on the endpoint object
+- `changes.changes` is a list of `EntryChange<T>` with `.old` and `.new`; null old = create, null new = delete
+- The increment/decrement DSL is `modification { it.field += 1 }` — NOT `it.field increment 1`
+
+## Modification DSL: Increment/Decrement
+
+Use `+=` (with a positive or negative number) in the `modification {}` DSL — there is no `increment`/`decrement` infix operator:
+
+```kotlin
+// ✅ CORRECT
+modification { it.likeCount += 1 }
+modification { it.likeCount += -1 }
+
+// ❌ WRONG — does not exist
+modification { it.likeCount increment 1 }
+modification { it.likeCount decrement 1 }
+```
+
 ## REST PATCH with Modifications
 
 **⚠️ CRITICAL:** REST PATCH endpoints ALWAYS use `Modification<T>` wrapper, never raw values.

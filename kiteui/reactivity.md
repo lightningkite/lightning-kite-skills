@@ -109,6 +109,27 @@ launch {
 - Cleaner code with less boilerplate
 - Proper error handling with nullable returns
 
+**One-shot custom API calls (non-CRUD endpoints):** Use `rememberSuspending` for custom endpoint calls that return a snapshot rather than a live-updating list. This is the right pattern when ModelCache websocket updates are not available (e.g. a server-side joined feed):
+
+```kotlin
+// One-shot fetch from a custom endpoint — not live-updating
+val posts = rememberSuspending {
+    session().api.post.followedFeed(Query())
+}
+
+col {
+    expanding.scrolling.col {
+        col {
+            reactive {
+                clearChildren()
+                val list = posts() ?: return@reactive
+                list.forEach { post -> postCardStatic(post) }
+            }
+        }
+    }
+}
+```
+
 ## LazyProperty - Computed with Override
 
 ```kotlin
