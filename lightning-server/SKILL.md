@@ -174,6 +174,59 @@ val list = csv.decodeFromReader(ListSerializer(MyRow.serializer()), reader)    /
 
 Field names become column headers; nullable scalars round-trip; nested structures fall back to JSON in a single cell.
 
+## ⚠️ CRITICAL PITFALLS
+
+### ModelRestEndpoints operation names
+
+Quick reference — use these exact names when calling endpoints in tests or when referencing them programmatically:
+
+| Operation | Property name | Notes |
+|-----------|--------------|-------|
+| List/query | `.list` | POST body is `Query<T>` |
+| Single item | `.detail` | |
+| Insert one | `.insert` | |
+| Update (modify) | `.modify` | NOT `.update` — compile error |
+| Delete one | `.deleteItem` | NOT `.delete` — compile error |
+| Bulk delete | `.bulkDelete` | |
+| Insert many | `.insertBulk` | |
+
+In tests, when `rest` is a **plain `ModelRestEndpoints`**, access ops directly:
+```kotlin
+MessageEndpoints.rest.insert.test(auth, message)
+MessageEndpoints.rest.modify.test(id, auth, modification { ... })
+MessageEndpoints.rest.deleteItem.test(id, auth, Unit)
+```
+
+When `rest` combines with `ModelRestUpdatesWebsocket`, ops live under `.rest.endpoints.<op>` — see testing.md for details.
+
+Verified: ModelRestEndpoints.kt in lightning-server/typed/ source.
+
+### `postPermissionsForUser` — receiver context and imports
+
+The `postPermissionsForUser` lambda receiver is `AuthAccess<USER>` (= `Access<*, *, USER>`). Inside it:
+- `auth` gives `Authentication<User>` (the authenticated user's token/session)
+- `auth.id` gives the user's ID (`User.ID`)
+- `auth.fetch()` fetches the full `User` from the database — requires explicit import
+
+```kotlin
+import com.lightningkite.lightningserver.auth.fetch  // required for auth.fetch()
+import com.lightningkite.lightningserver.auth.id     // required for auth.id
+
+postPermissionsForUser = { table ->
+    table.interceptCreate { message ->
+        val user = auth.fetch()   // fetches User from database
+        message.copy(
+            sender = auth.id,
+            senderName = user.name,
+        )
+    }
+}
+```
+
+Use this to force server-side field values that the client must not control (sender ID, timestamps, etc.).
+
+Verified: MessageEndpoints.kt (demo/iter3-chat).
+
 ## Anti-Patterns
 
 ❌ Manually create CRUD endpoints (use ModelRestEndpoints)

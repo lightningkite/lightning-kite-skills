@@ -108,6 +108,111 @@ val results = remember {
 
 ## ⚠️ CRITICAL PITFALLS (Read First!)
 
+### P1. KSP `path` extension collisions — use subscript form `Model.path[Model_field]`
+
+KSP generates both `Model_field` (`SerializableProperty`) and `Model.path.field` (`DataClassPath`). Two collisions to watch for:
+
+1. **`name` field** — `Model.path.name` resolves to Kotlin's `KProperty.name` (wrong), not the generated path. Use `Model.path[Model_name]`.
+2. **Field whose name matches a class in scope** — e.g. `Message.path.channel` when a `Channel` class is imported resolves to the class, not the path. Use `Message.path[Message_channel]`.
+
+Escape hatch: subscript form always works:
+```kotlin
+// ❌ Ambiguous when field name collides with stdlib or imported class
+SortPart(Channel.path.name, ascending = true)     // resolves to KProperty.name!
+condition<Message> { it.channel eq channelId }    // 'channel' resolves to Channel class!
+
+// ✅ Subscript form bypasses all collisions
+SortPart(Channel.path[Channel_name], ascending = true)
+condition<Message> { it[Message_channel] eq channelId }
+```
+
+Imports needed (KSP-generated, in model's package):
+```kotlin
+import com.lightningkite.lskiteuistarter.Channel_name
+import com.lightningkite.lskiteuistarter.Message_channel
+```
+
+Verified: ChannelListScreen.kt, ChannelChatScreen.kt (demo/iter3-chat).
+
+### P2. `SortPart` takes `DataClassPath`, NOT `SerializableProperty`
+
+`Model_field` is a `SerializableProperty<Model, V>` — it won't compile in `SortPart`. Use `Model.path.field`, or the subscript form when the field name collides (see P1 above).
+
+```kotlin
+// ❌ WRONG — type mismatch: SerializableProperty vs DataClassPath
+orderBy = listOf(SortPart(Message_createdAt, ascending = true))
+
+// ✅ CORRECT — DataClassPath form
+orderBy = listOf(SortPart(Message.path.createdAt, ascending = true))
+
+// ✅ CORRECT — subscript form when name collides
+orderBy = listOf(SortPart(Channel.path[Channel_name], ascending = true))
+```
+
+Verified: ChannelChatScreen.kt, ChannelListScreen.kt (demo/iter3-chat).
+
+### P3. Reading a reactive (e.g. `session()`) is suspend — can't call inside render-time lambdas
+
+`session()` and other `Reactive<T>` reads are suspend operations. Calling them inside `forEachById` or other render-time lambdas (which are not suspend) causes a compiler error. Call reactives inside a reactive context: `::content { }` or `reactive { }`.
+
+```kotlin
+// ❌ WRONG — can't call session() in forEachById's render lambda
+forEachById(messages, id = { it._id }) { messageReactive ->
+    val userId = session().userId  // compile error: suspension point in non-suspend context
+    text { content = "..." }
+}
+
+// ✅ CORRECT — read session() inside a reactive binding
+forEachById(messages, id = { it._id }) { messageReactive ->
+    text { ::content {
+        val userId = session().userId  // fine: ::content lambda IS reactive
+        "${messageReactive().senderName}: ${messageReactive().content}"
+    } }
+}
+
+// ✅ CORRECT — or read outside forEachById in the render scope (if session is already reactive)
+val session = currentSessionNotNull
+forEachById(messages, id = { it._id }) { messageReactive ->
+    text { ::content {
+        val userId = session().userId
+        "..."
+    } }
+}
+```
+
+Verified: ChannelChatScreen.kt (demo/iter3-chat).
+
+### P4. Labeled-field pattern — use `subtext` + input, or `field()` with explicit import
+
+There are two verified patterns for a labeled input field:
+
+**Pattern A — simple (used in ChannelListScreen dialogs):**
+```kotlin
+col {
+    subtext("Channel name")
+    textInput {
+        hint = "e.g. general"
+        keyboardHints = KeyboardHints.title
+        content bind channelName
+    }
+}
+```
+
+**Pattern B — `field()` from `l2` (used in LoginScreen):**
+```kotlin
+import com.lightningkite.kiteui.views.l2.field  // explicit import required
+
+field("Server") {
+    select {
+        bind(selectedValue, options) { it.label }
+    }
+}
+```
+
+`field()` requires an explicit import (`l2.*` star import does NOT resolve it reliably). It applies `fieldTheme` automatically and wires accessibility `labelFor`. Pattern A is simpler and always works.
+
+Verified: ChannelListScreen.kt (Pattern A), LoginScreen.kt (Pattern B) on master.
+
 ### 0. Action lambda has NO element/context receiver — capture context before defining it
 
 `Action("label") { ... }` is `suspend CoroutineScope.() -> Unit`. Unlike `onClick {}`, it does NOT have `ElementWriter` or `ElementContext` as a receiver, so `context`, `toast(...)`, and `pageNavigator` are out of scope inside it.
@@ -578,10 +683,17 @@ danger.button { }     // Destructive
 warning.text("!")     // Warning
 card.col { }          // Card background
 
-// Make a field
-field("Label") { 
-    // fieldTheme automatically applied
-    textInput { /*...*/ }
+// Make a labeled field — two options (see P4 in Critical Pitfalls)
+// Option A: simple, no special import
+col {
+    subtext("Label")
+    textInput { hint = "…"; content bind value }
+}
+
+// Option B: field() — requires explicit import com.lightningkite.kiteui.views.l2.field
+// (fieldTheme + accessibility labelFor wired automatically)
+field("Label") {
+    textInput { hint = "…"; content bind value }
 }
 
 // Dynamic theme based on state

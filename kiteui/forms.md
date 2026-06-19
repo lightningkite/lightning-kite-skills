@@ -1,5 +1,33 @@
 # KiteUI Forms
 
+## Labeled Input Fields
+
+**⚠️ `field` requires an explicit import** — `import com.lightningkite.kiteui.views.l2.field`. The `l2.*` star-import does not reliably resolve it. Two verified patterns:
+
+```kotlin
+// Pattern A — simple, no import needed (used in ChannelListScreen dialogs)
+col {
+    subtext("Email")
+    textInput {
+        hint = "your@email.com"
+        keyboardHints = KeyboardHints.email
+        content bind email
+    }
+}
+
+// Pattern B — field() applies fieldTheme + accessibility automatically
+import com.lightningkite.kiteui.views.l2.field
+
+field("Email") {
+    // Do NOT call fieldTheme here — field() already applies it
+    textInput {
+        hint = "your@email.com"
+        keyboardHints = KeyboardHints.email
+        content bind email
+    }
+}
+```
+
 ## Basic Form
 
 ```kotlin
@@ -7,16 +35,18 @@ val email = Signal("")
 val password = Signal("")
 
 col {
-    field("Email") {
-        fieldTheme.textInput {
+    col {
+        subtext("Email")
+        textInput {
             hint = "your@email.com"
             keyboardHints = KeyboardHints.email
             content bind email
         }
     }
 
-    field("Password") {
-        fieldTheme.textInput {
+    col {
+        subtext("Password")
+        textInput {
             hint = "Password"
             keyboardHints = KeyboardHints.password
             content bind password
@@ -28,17 +58,6 @@ col {
         onClick {
             signIn(email(), password())
         }
-    }
-}
-```
-
-## Field with Label
-
-```kotlin
-field("Username") {
-    textInput {
-        hint = "Enter username"
-        content bind username
     }
 }
 ```
