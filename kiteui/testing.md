@@ -186,6 +186,33 @@ echo "Ready for browser testing at http://localhost:8942"
 - Update all scripts to use consistent port numbers
 - Keep ports isolated from other projects (increment by 2)
 
+## Automated UI testing: in-process `uiTest()` vs `remoteUiTest()` (AiDriver)
+
+There are TWO cross-platform automated-UI mechanisms — pick deliberately:
+
+- **`uiTest()` + `UiTestScope`** — runs the real frontend IN-PROCESS against a RAM-DB Lightning
+  Server via `TestRunnerFetcher` (no HTTP, no browser, no relay). Fastest on JVM SSR; also
+  Android/iOS/JS. **Prefer this for CI/regression** — deterministic, no external app needed.
+  Depend on `com.lightningkite.kiteui:kiteui-test-utilities`; run `./gradlew :<module>:jvmSsrTest`.
+- **`remoteUiTest(appId, startRoute) { ... }`** — drives the REAL running app through the **AiDriver
+  relay** (`ws://localhost:7474`); the app must be launched and connected (`AiDriver.connect` in
+  `app()`, dev builds only). Cross-platform **including mobile** (Android debug / iOS debug binary),
+  but flakier (needs a live app + relay). Use for true on-device / cross-platform drives, not CI.
+  Same `UiTestScope` API: `snapshot()`, `find`, `waitForText`, `assertTextVisible`, `setValue`,
+  `click`, `scroll`, etc.
+
+### AiDriver relay gotchas (cost real time in iter-6)
+- **Stale-tab routing:** the relay resolves an app by PREFIX and returns the alphabetically-MAX
+  client id. Multiple/stale browser tabs (`myapp-web-AAA`, `…-ZZZ`) → commands hijacked by a frozen
+  tab → 30s timeouts. Fix: ensure only ONE client is connected (close stale tabs) or target the FULL
+  client id (`myapp-web-XYZ`), not the prefix.
+- **Driving infinite scroll:** `…\troot\tscroll\t0\t800` scrolls the ROOT, not the recyclerView, so
+  no page loads. Target the recyclerView's element path, or (robust) `find` the "Load more" control
+  and `click` it.
+- Install/run: `./gradlew :ai-driver-server:installDriver` then `kiteui-drive`. If that install is
+  unavailable, run the relay jar directly (`java -jar …/kiteui-ai-driver.jar`, binds :7474) and POST
+  tab-separated commands to `http://localhost:7474` (there's also a JSON-RPC `/mcp` endpoint).
+
 ## Common Frontend Issues
 
 ### Blank page with no errors

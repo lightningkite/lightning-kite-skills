@@ -284,6 +284,26 @@ If `withWrite` feels too complex for the use case (e.g. a status transition grid
 
 Verified: `Select.kt` (`bind` requires `MutableReactive<T>`); `helpers.kt` in reactive library (`withWrite` definition).
 
+### P8. `condition<T> { }` builds a condition from a LAMBDA — use `Condition.Always` for "no filter"
+
+`condition<T> { it.field eq x }` takes a lambda that builds a `Condition<T>`. For the unconstrained
+case (match everything), use the constant `Condition.Always` — NOT `condition<T> { true }`.
+
+```kotlin
+val cond = if (query.isBlank()) Condition.Always
+           else condition<Contact> { it[Contact_name].contains(query, true) }
+```
+
+Aggregate calls like `count()` are also `suspend` — call them in `rememberSuspending { }`, not
+`remember { }`. Verified: demo/iter6-pagination ContactBrowseScreen.kt.
+
+### P9. `PersistentProperty<T>` stores JSON-encoded values (token-injection / test gotcha)
+
+A `PersistentProperty<String?>` (and friends) serialize their value as **JSON** in localStorage — a
+`String?` is stored as `"\"the-token\""`, not the raw string. To inject a session token from outside
+the app (e.g. a test harness setting `localStorage`), write the JSON-encoded form, not the bare value.
+Verified: `PersistentProperty` source; observed when injecting a session token during iter-6 testing.
+
 ### 0. Action lambda has NO element/context receiver — capture context before defining it
 
 `Action("label") { ... }` is `suspend CoroutineScope.() -> Unit`. Unlike `onClick {}`, it does NOT have `ElementWriter` or `ElementContext` as a receiver, so `context`, `toast(...)`, and `pageNavigator` are out of scope inside it.
@@ -742,6 +762,61 @@ val upcomingEvents = remember {
 ```
 
 Verified: CreateEventScreen.kt, EventsScreen.kt (demo/iter5-events); `LocalDateTimeField.kt` in KiteUI source (`content: MutableReactiveValue<LocalDateTime?>`); `LocalTimeRender.kt` (renderToString on Instant/LocalDateTime in `com.lightningkite.kiteui.locale`).
+
+---
+
+## Pagination & large lists (virtualized + grow-the-window)
+
+Key facts (verified against KiteUI/Lightning Server source + demo/iter6-pagination):
+- `Query<T>` is **offset paging only**: `skip` + `limit`. There is **no cursor/keyset paging**.
+  A stable order is required for correct paging — sort by an `@Index`-ed field in every query.
+- **`ModelCache.list(Query)` is NOT lazy** — it fetches *all* rows up to `limit` in one response.
+  So the KiteUI idiom is **"grow the window"**: a `Signal<Int>` limit that increases by a page size.
+- `recyclerView { children(reactive, id) { } }` **virtualizes** — only visible rows are in the view
+  tree even with hundreds loaded. `lastIndex()` (reactive) gives the last visible index → trigger the
+  next window when it nears the end (infinite scroll). A "Load more" button is the simple alternative.
+- **`count()` is a `suspend` fn** on `ClientModelRestEndpoints` (`session.api.<model>.count(cond)`);
+  there is **no ModelCache wrapper for count** → call it in `rememberSuspending { }`.
+
+```kotlin
+private const val PAGE_SIZE = 50
+
+val limit = Signal(PAGE_SIZE)                 // grows as you scroll / press "Load more"
+val search = Signal("")
+val searchDebounced = search.debounce(400)
+
+val contacts = remember {
+    val session = currentSession() ?: return@remember emptyList<Contact>()
+    val cond = if (searchDebounced().isBlank()) Condition.Always
+               else condition<Contact> { it[Contact_name].contains(searchDebounced(), true) }
+    session.contacts.list(Query(
+        condition = cond,
+        orderBy = listOf(SortPart(Contact.path[Contact_name], ascending = true)), // P2 + subscript (P1)
+        skip = 0, limit = limit(),            // re-queries whenever limit() or search changes
+    ))()
+}
+
+val total = rememberSuspending {              // count() is suspend → rememberSuspending, not remember
+    val session = currentSession() ?: return@rememberSuspending 0
+    session.api.contact.count(Condition.Always)
+}
+
+expanding.recyclerView {
+    children(contacts, id = { it._id }) { row -> contactRow(row) }   // virtualized
+    reactive {                                                       // infinite scroll
+        val items = contacts(); val last = lastIndex()
+        if (items.isNotEmpty() && last >= items.size - 3 && items.size < (total() ?: 0)) {
+            launch { limit.value += PAGE_SIZE }
+        }
+    }
+}
+```
+
+**Caveat (real framework limit):** grow-the-window loads everything up to the current `limit` in one
+response, so it does NOT scale to very large windows (tens of thousands). For truly large data you'd
+need cursor/keyset paging, which isn't built in today. Good for hundreds–low thousands on screen.
+
+Verified: ContactBrowseScreen.kt, ContactEndpoints.kt (demo/iter6-pagination).
 
 ---
 
