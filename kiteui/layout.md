@@ -327,6 +327,40 @@ expanding.shownWhen { !isLoading() }.recyclerView { ... }
 
 This applies to any layout modifier (`expanding`, `weight()`, `sizeConstraints()`, etc.) — always put them **before** `shownWhen` so they affect the wrapper, not the hidden child.
 
+### Pitfall: a column only becomes flex when a direct child has weight
+
+<!-- by Claude -->
+KiteUI emits a column as `display: block` until one of its **direct** children carries weight, at
+which point it gains `childHasWeight` and becomes `display: flex`. A block container lets children
+size to content, so an `expanding` grandchild will not stretch — even though the grandchild really
+does have `flex-grow: 1`. Inspecting the collapsed element shows correct CSS and hides the cause;
+walk *up* the chain looking for the first `display: block` column.
+
+This bites hardest with `shownWhen`, which inserts its own column:
+
+```kotlin
+// ❌ Output pane collapses: the shownWhen wrapper's column has no weighted direct child,
+//    so it stays display:block and the expanding output never stretches.
+expanding.shownWhen { tab() == Tab.Logs }.col {
+    card.row { /* controls */ }
+    expanding.outputView(...)          // reports flex-grow:1, still 24px tall
+}
+
+// ✅ Weight the content column so the wrapper above it becomes a flex container.
+expanding.shownWhen { tab() == Tab.Logs }.col {
+    expanding.col {
+        card.row { /* controls */ }
+        expanding.outputView(...)
+    }
+}
+```
+
+Better still, avoid the nesting entirely — make each branch its own `@Routable` page, or use
+`swapView`. See "Don't build tabs from parallel `shownWhen` branches" in SKILL.md.
+
+Debugging recipe: dump `clientHeight` / `flexGrow` / `display` for each ancestor. The culprit is
+the highest node that has the right height but `display: block`.
+
 ## Units and Dimensions
 
 ```kotlin

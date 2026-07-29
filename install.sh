@@ -16,6 +16,7 @@ SKILLS=(
     "ls5-kui7-migration"
     "model-design"
     "service-abstractions"
+    "estimation"
 )
 
 uninstall() {

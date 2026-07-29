@@ -402,10 +402,9 @@ val quickTheme = Theme.flat2(
 1. Check `Color.fromHex(0xABCDEF)` - no # prefix
 2. Verify semantic is correct (`.important.button` not just `.button`)
 3. Check semantic override uses `withBack()` not `copy()`
-4. **CRITICAL**: Ensure alpha channel is set! `Color` constructor defaults to `alpha = 0f` (transparent)
-   - Use `Color.fromHex(0xRRGGBB)` which automatically sets `alpha = 1f`
-   - OR use `Color(alpha = 1f, red = ..., green = ..., blue = ...)` with explicit alpha
-   - Transparent colors (alpha = 0) will be invisible even if RGB values are correct
+4. If a color still appears invisible, check for an explicit `alpha = 0f` somewhere in its
+   construction — `Color`'s constructor defaults `alpha` to `1f` (opaque), so transparency must
+   now be requested explicitly (e.g. `Color.transparent`, or `Color(alpha = 0f, ...)`)
 
 ### Font Not Rendering
 

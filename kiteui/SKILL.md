@@ -425,6 +425,38 @@ expanding.shownWhen { !isLoading() }.recyclerView { ... }
 ```
 Layout modifiers (`expanding`, `weight()`, `sizeConstraints()`) must go **before** `shownWhen`, not after.
 
+### 9b. Don't build tabs from parallel `shownWhen` branches — use pages or `swapView`
+
+Four sibling `shownWhen` branches keeps every tab's views alive in the tree at once, and it
+silently breaks height propagation: `shownWhen` inserts an intermediate column that only becomes
+a flex container once one of *its* direct children carries weight. Your content column usually
+doesn't, so it stays `display: block` and any `expanding` child inside collapses to content
+height — while reporting `flex-grow: 1` on the element you're inspecting. The symptom points at
+the wrong node.
+
+```kotlin
+// ❌ WRONG - all four tabs live in the tree; the expanding output pane collapses to one line
+col {
+    expanding.shownWhen { tab() == Tab.Console }.col { consoleTab() }
+    expanding.shownWhen { tab() == Tab.Snapshot }.col { snapshotTab() }
+    // ...
+}
+
+// ✅ BEST - each tab is its own @Routable page; only the active one exists, and it's URL-addressable
+@Routable("/")         object ConsolePage : Page { /* ... */ }
+@Routable("/snapshot") object SnapshotPage : Page { /* ... */ }
+// then wire them up as navItems on appNav(navigator) { ... }
+
+// ✅ OK - swapView when the tabs genuinely shouldn't be routes
+swapView(tab) { t -> when (t) { Tab.Console -> consoleTab(); Tab.Snapshot -> snapshotTab() } }
+```
+
+State on a `@Routable object` page survives navigating away and back, because the page object is
+a singleton — so captured output isn't lost when switching tabs.
+
+If you are stuck with `shownWhen` for this, the content column inside it must itself be
+`expanding`, or nothing below it will stretch.
+
 ### 10. Buttons have no `text` property — nest a `text {}` call
 
 ```kotlin
