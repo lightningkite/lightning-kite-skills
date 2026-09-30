@@ -25,6 +25,8 @@ KiteUI is a Kotlin Multiplatform UI framework using native view components and f
 - Setup/SDK regen/browser testing → [testing.md](testing.md)
 - Keyboard shortcuts/drag-drop/recyclerView → [advanced-patterns.md](advanced-patterns.md)
 
+**If the sub-files don't cover it (unfamiliar API, exact signature, version-specific behavior), read the KiteUI source directly at `/home/ihoonter/Lightning/Projects/kiteui` instead of guessing.**
+
 ---
 
 ## General Tips
