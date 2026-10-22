@@ -116,7 +116,7 @@ val a: Lens<User, String> = User.address.city     // field + field
 val b: Optic<User, String> = User.backup.notNull.city
 ```
 
-APIs downstream use this to type results: e.g. LS-KiteUI's `signal.lensPath(User.name)` is a `MutableReactive<String>`, while `signal.lensPath(User.backup.notNull.city)` is a `MutableReactive<String?>`.
+APIs downstream use this to type results: e.g. LS-KiteUI's `signal.lens(User.name)` is a `MutableReactive<String>`, while `signal.lens(User.backup.notNull.city)` is a `MutableReactive<String?>`.
 
 ## Removed (compile errors)
 
@@ -198,7 +198,7 @@ These ship together with 1.4 and usually show up in the same migration:
   `execute` returns the block's value, so it can wrap a single expression.
 - **TOTP proofs** moved to their own artifact: add `com.lightningkite.lightningserver:sessions-totp` if you use `TimeBasedOTPProofEndpoints`.
 - The TS SDK still names optics `DataClassPath` / `DataClassPathPartial` (it maps the new serial names), so generated TypeScript is unchanged.
-- **LS-KiteUI `lensPath`**: pass the path directly — `draft.lensPath(User.address.city)`. A `Lens` path gives a non-null `MutableReactive<T>`; an `Optic` path gives `MutableReactive<T?>`, and writing `null` through a non-nullable target is ignored. The lambda form `lensPath { it.address.city }` is deprecated, and only accepts lambdas that return a `Lens`; a lambda ending in `notNull`, `asType` or `elements` no longer compiles, so pass those paths directly.
+- **LS-KiteUI `lensPath` → `lens`**: bind through a path with `draft.lens(User.address.city)` (`com.lightningkite.serialization.lens`). A `Lens` path gives a non-null `MutableReactive<T>`; an `Optic` path gives `MutableReactive<T?>`, and writing `null` through a non-nullable target is ignored. It keeps the receiver's kind: `MutableReactiveValue`, `MutableValidated`, `MutableValidatedValue`, `ReactiveValue` and `Reactive` each get their own type back. `lensPath(path)` is deprecated with a `ReplaceWith`. The lambda form `lensPath { it.address.city }` is deprecated with no `lens` equivalent (`lens { … }` is the reactive library's read-only getter lens); it only accepts lambdas that return a `Lens`, so paths ending in `notNull`, `asType` or `elements` must be passed directly.
 - **LS-KiteUI `ensureTotal`** and `SortPart` take fields directly: `SortPart(User._id)`.
 
 ## Mechanical-rewrite tips

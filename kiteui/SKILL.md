@@ -119,14 +119,14 @@ KSP generates `Model.field` on the companion as a `Field<Model, V>`, which is a 
 SortPart(Channel.name, ascending = true)
 Condition<Message> { it.channel eq channelId }
 Message.channel eq channelId                  // same condition, no lambda
-draft.lensPath(User.address.city)             // nested fields chain
+draft.lens(User.address.city)             // nested fields chain
 ```
 
 Optic helpers (`notNull`, `elements`, `asType`, `Lens<T>()`) live in `com.lightningkite.services.database.optics`; import it next to `com.lightningkite.services.database.*`.
 
 ### P2. `notNull` makes a path nullable-typed downstream
 
-Fields chain into `Lens` paths, which always reach their target. `notNull` (and `asType`, `elements`) produce an `Optic`, which may not. APIs that read through a path reflect that: `draft.lensPath(User.name)` is a `MutableReactive<String>`, while `draft.lensPath(User.address.notNull.city)` is a `MutableReactive<String?>`.
+Fields chain into `Lens` paths, which always reach their target. `notNull` (and `asType`, `elements`) produce an `Optic`, which may not. APIs that read through a path reflect that: `draft.lens(User.name)` is a `MutableReactive<String>`, while `draft.lens(User.address.notNull.city)` is a `MutableReactive<String?>`.
 
 ```kotlin
 SortPart(Message.createdAt, ascending = true)          // fields work in SortPart
