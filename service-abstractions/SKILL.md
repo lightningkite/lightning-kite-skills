@@ -13,7 +13,7 @@ This skill provides expertise in using the Service Abstractions Kotlin Multiplat
 Invoke this skill when working with:
 - Service Abstractions library code
 - Database, cache, file system, or other infrastructure service configurations
-- Type-safe database queries using generated DataClassPath
+- Type-safe database queries using generated fields (optics)
 - Settings-based service instantiation
 - Multiplatform Kotlin projects using service abstractions
 
@@ -89,176 +89,170 @@ Services are configured using URL schemes:
 ### Defining Models
 
 ```kotlin
-@GenerateDataClassPaths  // Enables type-safe queries
-@Serializable
+@Queryable  // = @Serializable + generated field paths
 data class User(
-    override val _id: UUID = UUID.random(),
-    @Index(unique = true) val email: String,
+    override val _id: Uuid = Uuid.random(),
+    @Index(unique = IndexUniqueness.Unique) val email: String,
     @Index val age: Int,
     val name: String,
-    val friends: List<UUID>,
-    val metadata: Map<String, String> = emptyMap()
-) : HasId<UUID>
+    val nickname: String? = null,
+    val address: Address? = null,
+    val friends: List<Uuid> = listOf(),
+) : HasId<Uuid>
+
+@Queryable
+data class Address(val city: String, val zip: String)
 ```
 
 **Key Annotations:**
-- `@GenerateDataClassPaths` - Generates field path objects for type-safe queries
-- `@Index` - Creates database index (supports `unique` parameter)
-- Model must implement `HasId<T>` with `_id` field
+- `@Queryable` - Applies `@Serializable` and generates a typed field for every property (replaces `@Serializable @GenerateDataClassPaths`)
+- `@Index` - Creates a database index (`unique = IndexUniqueness.Unique` for unique indexes)
+- Model must implement `HasId<T>` with an `_id` field
 
-### Code Generation
+### Generated Fields (Optics)
 
-After defining models, run KSP to generate DataClassPath objects:
+KSP generates one field per property on the companion: `User.email` is a `Field<User, String>`. Fields **are paths** — use them directly in conditions, modifications, and sorts, and chain them to reach nested values:
+
+```kotlin
+User.age                     // Field<User, Int>  (a Lens)
+User.address.notNull.city    // Optic<User, String>
+Lens<User>()                 // the whole User, when an API needs a root path
+```
+
+The path types live in `com.lightningkite.services.database.optics` (`Optic`, `Lens`, `Field`, `notNull`, `elements`, `asType`, ...), so import it alongside `com.lightningkite.services.database.*`.
+
+- A **`Lens`** always reaches its target (`get` returns `B`). Fields, and fields composed with fields, are lenses.
+- An **`Optic`** may not (`get` returns `B?`). `notNull`, `asType(...)`, and `elements` produce optics.
+
+Run KSP after changing models:
 
 ```bash
 ./gradlew :your-module:kspCommonMainKotlinMetadata
 ```
 
-This generates `User.path.email`, `User.path.age`, etc. for type-safe queries.
-
 ### Getting a Table
 
 ```kotlin
 val db: Database = settings.database("my-db", context)
-await db.connect()
+db.connect()
 
-val userTable: Table<User, UUID> = db.collection<User, UUID>()
-// Or with explicit name:
-val userTable = db.collection<User, UUID>("users")
+val userTable: Table<User> = db.table<User>()          // named after the class
+val userTable2: Table<User> = db.table<User>("users")  // explicit name
 ```
 
 ### CRUD Operations
 
 ```kotlin
 // Insert
-val user = User(email = "john@example.com", age = 30, name = "John")
-userTable.insert(user)
-userTable.insertMany(listOf(user1, user2))
+userTable.insertOne(user)
+userTable.insert(listOf(user1, user2))
 
 // Find
-val allUsers = userTable.findAll()
-val adults = userTable.find(condition = User.path.age greaterThan 18)
-val john = userTable.get(userId)  // By ID
-val byEmail = userTable.findOne(condition = User.path.email eq "john@example.com")
+val adults = userTable.find(User.age gte 18).toList()
+val john = userTable.get(userId)
+val byEmail = userTable.findOne(User.email eq "john@example.com")
 
 // Update
 userTable.updateOne(
-    condition = User.path.email eq "john@example.com",
-    modification = User.path.age assign 31
+    condition = User.email eq "john@example.com",
+    modification = Modification { it.age assign 31 },
 )
-
+userTable.updateOneById(userId, Modification { it.age += 1 })
 userTable.updateMany(
-    condition = User.path.age lessThan 18,
-    modification = User.path.metadata.mapSet("status", "minor")
+    condition = User.age lt 18,
+    modification = Modification { it.nickname assign "minor" },
 )
 
 // Delete
-userTable.deleteOne(condition = User.path.email eq "john@example.com")
-userTable.deleteMany(condition = User.path.age lessThan 13)
+userTable.deleteOne(User.email eq "john@example.com")
+userTable.deleteMany(User.age lt 13)
 ```
 
-### Type-Safe Query Conditions
-
-The generated DataClassPath objects provide type-safe query builders:
+### Conditions
 
 ```kotlin
 // Comparison
-User.path.age eq 30
-User.path.age notEq 30
-User.path.age greaterThan 18
-User.path.age lessThan 65
-User.path.age greaterThanOrEqual 21
-User.path.age lessThanOrEqual 64
+User.age eq 30
+User.age neq 30
+User.age gt 18
+User.age gte 21
+User.age lt 65
+User.age lte 64
+User.age inside setOf(18, 21)
+User.age notInside setOf(0)
 
-// String operations
-User.path.email contains "@example.com"
-User.path.name startsWith "John"
-User.path.name endsWith "Smith"
-User.path.email regex ".*@example\\.com"
+// Strings
+User.email contains "@example.com"          // case-insensitive
+User.name.contains("John", ignoreCase = false)
+User.name.mapCondition(Condition.RegexMatches("^J.*"))
 
-// Logical operations
-(User.path.age greaterThan 18) and (User.path.age lessThan 65)
-(User.path.email eq "john@example.com") or (User.path.email eq "jane@example.com")
-not(User.path.age lessThan 18)
+// Nullable values
+User.nickname eq null
+User.address.notNull.city eq "Boise"        // never matches a null address
 
-// List operations
-User.path.friends.any eq friendId
-User.path.friends.all greaterThan someId
-User.path.friends.sizesEquals 5
+// Collections
+User.friends.any { it eq friendId }
+User.friends.all { it neq blockedId }
 
-// Existence checks
-User.path.metadata.exists()
-User.path.metadata.notExists()
+// Combining
+(User.age gte 18) and (User.age lt 65)
+(User.email eq "a@x.com") or (User.email eq "b@x.com")
+!(User.age lt 18)
+Condition.Always
+Condition.Never
 
-// Map operations
-User.path.metadata.mapGet("status") eq "active"
+// The builder form, when you'd rather not repeat the type name
+Condition<User> { (it.age gte 18) and (it.name contains "John") }
 ```
 
-### Type-Safe Modifications
+### Modifications
 
 ```kotlin
-// Assignment
-User.path.age assign 31
-
-// Increment/decrement
-User.path.age plusAssign 1
-User.path.age minusAssign 1
-
-// List operations
-User.path.friends.addAll(listOf(id1, id2))
-User.path.friends.removeAll(listOf(id3))
-User.path.friends.dropFirst()
-User.path.friends.dropLast()
-
-// Map operations
-User.path.metadata.mapSet("status", "active")
-User.path.metadata.mapRemove("oldKey")
-
-// Combine multiple modifications
-listOf(
-    User.path.age assign 31,
-    User.path.metadata.mapSet("updated", "true")
-)
+Modification<User> {
+    it.age assign 31
+    it.age += 1                      // increment (any Number)
+    it.age coerceAtMost 120
+    it.friends += friendId           // append one / += listOf(...) to append many
+    it.friends -= blockedId          // remove one / -= listOf(...) to remove many
+    it.friends.removeAll { it eq blockedId }
+    it.address.notNull.city assign "Boise"   // does nothing when address is null
+}
 ```
+
+Maps can't be queried or partially modified; assign the whole map.
 
 ### Aggregations
 
 ```kotlin
-// Count by age
-val countByAge: Map<Int, Int> = userTable.groupAggregate(
-    aggregate = Aggregate.Count,
-    groupBy = User.path.age
-)
-
-// Sum ages by email domain
-val sumAgesByDomain = userTable.groupAggregate(
-    aggregate = Aggregate.Sum(User.path.age),
-    groupBy = User.path.email  // Would need to extract domain in real code
-)
-
-// Average age
-val avgAge = userTable.aggregate(
-    aggregate = Aggregate.Average(User.path.age)
+val countByAge: Map<Int, Int> = userTable.groupCount(groupBy = User.age)
+val total: Int = userTable.count(User.age gte 18)
+val avgAge: Double? = userTable.aggregate(Aggregate.Average, property = User.age)
+val avgAgeByCity: Map<String?, Double?> = userTable.groupAggregate(
+    Aggregate.Average,
+    groupBy = User.address.notNull.city,
+    property = User.age,
 )
 ```
+
+`Aggregate` is `Sum`, `Average`, `StandardDeviationSample`, or `StandardDeviationPopulation`.
 
 ### Sorting and Limits
 
 ```kotlin
-// Sort by age descending
-val sorted = userTable.find(
-    condition = Condition.Always(),
-    orderBy = listOf(SortPart(User.path.age, false))  // false = descending
-)
-
-// Limit and skip
 val page = userTable.find(
-    condition = Condition.Always(),
-    orderBy = listOf(SortPart(User.path.age)),
+    condition = Condition.Always,
+    orderBy = listOf(SortPart(User.age, ascending = false), SortPart(User._id)),
     skip = 20,
-    limit = 10
-)
+    limit = 10,
+).toList()
+
+// Or with the builder
+val order = sort<User> { it.age.descending(); it._id.ascending() }
 ```
+
+### Text Search
+
+Models with `@TextIndex(["name", "email"])` can be searched with `userTable.findByTextIndex("john", condition = ...)`, which returns scored results. There is no full-text *condition*; for simple filtering use `contains` on string fields.
 
 ## Cache Usage
 
@@ -420,17 +414,18 @@ val context = SettingContext(
 ## Common Pitfalls
 
 1. **Forgetting to call connect()**: Services must be connected before use
-2. **Not generating DataClassPath**: Run KSP after adding/changing models
-3. **Missing @GenerateDataClassPaths**: Required for type-safe queries
-4. **Not implementing HasId**: Database models must have `_id` field
-5. **Incorrect URL schemes**: Check supported schemes for each service
-6. **Missing SerializersModule**: Custom types need registered serializers
-7. **Platform compatibility**: Not all implementations support all platforms (e.g., MongoDB is JVM-only)
+2. **Stale generated fields**: Run KSP after adding/changing models
+3. **Missing @Queryable**: Required for generated fields
+4. **Missing optics import**: `notNull`, `elements`, `Lens` etc. live in `com.lightningkite.services.database.optics`
+5. **Not implementing HasId**: Database models must have `_id` field
+6. **Incorrect URL schemes**: Check supported schemes for each service
+7. **Missing SerializersModule**: Custom types need registered serializers
+8. **Platform compatibility**: Not all implementations support all platforms (e.g., MongoDB is JVM-only)
 
 ## Build Commands
 
 ```bash
-# Generate DataClassPath for models
+# Generate fields for models
 ./gradlew :your-module:kspCommonMainKotlinMetadata
 
 # Run tests
@@ -479,7 +474,7 @@ val frequency: Duration = database.healthCheckFrequency
 ## Best Practices
 
 1. **Use Settings objects**: Makes configuration serializable and testable
-2. **Leverage type-safe queries**: Use generated DataClassPath instead of raw conditions
+2. **Leverage type-safe queries**: Use generated fields (`User.age gte 18`) instead of raw conditions
 3. **Add indexes**: Use `@Index` annotation on frequently queried fields
 4. **Test with shared suites**: Extend abstract test classes to ensure compatibility
 5. **Handle disconnect**: Implement proper lifecycle management for serverless
@@ -496,43 +491,42 @@ data class AppSettings(
     val cache: Cache.Settings = Cache.Settings("redis://localhost:6379")
 )
 
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 data class Post(
-    override val _id: UUID = UUID.random(),
-    @Index val authorId: UUID,
+    override val _id: Uuid = Uuid.random(),
+    @Index val authorId: Uuid,
     val title: String,
     val content: String,
     @Index val createdAt: Long = Clock.System.now().toEpochMilliseconds()
-) : HasId<UUID>
+) : HasId<Uuid>
 
 class BlogService(settings: AppSettings) {
     private val context = SettingContext(...)
     private val database = settings.database("blog", context)
     private val cache = settings.cache("blog", context)
 
-    private lateinit var posts: Table<Post, UUID>
+    private lateinit var posts: Table<Post>
 
     suspend fun start() {
         database.connect()
         cache.connect()
-        posts = database.collection()
+        posts = database.table<Post>()
     }
 
-    suspend fun createPost(authorId: UUID, title: String, content: String): Post {
+    suspend fun createPost(authorId: Uuid, title: String, content: String): Post {
         val post = Post(authorId = authorId, title = title, content = content)
-        posts.insert(post)
+        posts.insertOne(post)
         return post
     }
 
-    suspend fun getPostsByAuthor(authorId: UUID): List<Post> {
+    suspend fun getPostsByAuthor(authorId: Uuid): List<Post> {
         return posts.find(
-            condition = Post.path.authorId eq authorId,
-            orderBy = listOf(SortPart(Post.path.createdAt, ascending = false))
-        )
+            condition = Post.authorId eq authorId,
+            orderBy = listOf(SortPart(Post.createdAt, ascending = false))
+        ).toList()
     }
 
-    suspend fun getPost(id: UUID): Post? {
+    suspend fun getPost(id: Uuid): Post? {
         // Try cache first
         val cached = cache.get<Post>("post:$id")
         if (cached != null) return cached
@@ -557,28 +551,27 @@ class BlogService(settings: AppSettings) {
 ### Must Remember
 - Call `connect()` after service instantiation
 - Run KSP after model changes: `./gradlew :module:kspCommonMainKotlinMetadata`
-- Models need `@GenerateDataClassPaths` and `HasId<T>`
+- Models need `@Queryable` and `HasId<T>`; fields like `User.age` are paths
 - Use `-test` suffix URLs for ephemeral test services
 - Check platform compatibility for implementations
 
 ### Query Cheat Sheet
 ```kotlin
-// Conditions
-field eq value
-field notEq value
-field greaterThan value
-field lessThan value
-field.any eq value        // List contains
-field.exists()            // Field exists
+// Conditions (User.age is a generated field)
+User.age eq 30            // also neq, gt, gte, lt, lte, inside, notInside
+User.name contains "jo"
+User.address.notNull.city eq "Boise"
+User.friends.any { it eq id }
 
 // Modifications
-field assign value
-field plusAssign 1
-field.addAll(list)
-field.mapSet("key", "val")
+Modification<User> {
+    it.age assign 31
+    it.age += 1
+    it.friends += id
+}
 
 // Combining
 condition1 and condition2
 condition1 or condition2
-not(condition)
+!condition
 ```

@@ -45,7 +45,7 @@ signals = { table ->
     table
         .interceptCreate { reservation ->
             // 1. Validation - check conflicts
-            val conflicts = info.table().find(condition {
+            val conflicts = info.table().find(Condition {
                 (it.booth eq reservation.booth) and
                 (it.at lt reservation.endsAt) and
                 (it.endsAt gt reservation.at) and
@@ -128,7 +128,7 @@ permissions = {
     val user = auth.fetch()
     ModelPermissions(
         // ...
-        update = condition { it.user eq user._id },  // Can only update your own
+        update = Condition { it.user eq user._id },  // Can only update your own
         updateRestrictions = updateRestrictions {
             it.user.cannotBeModified()      // Field restriction
             it.createdAt.cannotBeModified() // Field restriction
@@ -139,7 +139,7 @@ signals = { table ->
     table
         .interceptChange { mod ->
             // Validate modifications before they're applied
-            mod.vet(Reservation_booth) { fieldMod ->
+            mod.vet(Reservation.booth) { fieldMod ->
                 when (fieldMod) {
                     is Modification.Assign -> {
                         // Check if new booth is available
@@ -220,7 +220,7 @@ signals = { table ->
 **Example:**
 ```kotlin
 .interceptChange { mod ->
-    mod.vet(Reservation_status) { fieldMod ->
+    mod.vet(Reservation.status) { fieldMod ->
         when (fieldMod) {
             is Modification.Assign -> {
                 // Validate status transitions
@@ -303,8 +303,8 @@ val info = database.modelInfo<User?, User, _>(
         // Roles this user is allowed to manage (at or below their level)
         val allowedRoles = UserRole.entries.filter { it <= auth.userRole() }
         val admin: Condition<User> =
-            if (auth.userRole() >= UserRole.Admin) condition { it.role inside allowedRoles } else Condition.Never
-        val self = condition<User> { it._id eq auth.id }
+            if (auth.userRole() >= UserRole.Admin) Condition { it.role inside allowedRoles } else Condition.Never
+        val self = Condition<User> { it._id eq auth.id }
 
         ModelPermissions(
             create = admin,
@@ -351,8 +351,8 @@ val info = database.modelInfo<User?, User, _>(
     // Cascade update denormalized fields
     if (old.name != new.name) {
         RelatedTable.updateMany(
-            condition { it.projectId eq new._id },
-            modification { it.projectName assign new.name }
+            Condition { it.projectId eq new._id },
+            Modification { it.projectName assign new.name }
         )
     }
 
@@ -412,7 +412,7 @@ val info = database.modelInfo<User?, User, _>(
 ```kotlin
 .postDelete { deleted ->
     // Clean up related records
-    RelatedTable.deleteMany(condition { it.projectId eq deleted._id })
+    RelatedTable.deleteMany(Condition { it.projectId eq deleted._id })
 
     // Delete uploaded files
     deleted.avatarFile?.let { fileService.delete(it) }
@@ -449,7 +449,7 @@ signals = { table ->
         // Insert only the truly new ones
         val newTags = newlyUsedTags.minus(existing).map { Tag(it) }
         if (newTags.isNotEmpty()) {
-            TagEndpoints.info.table().insertMany(newTags)
+            TagEndpoints.info.table().insert(newTags)
         }
     }
 }
@@ -501,10 +501,10 @@ Understanding the exact execution order is crucial for correct implementation:
 
 ```kotlin
 .denormalize2(
-    BoothDividerOpenRequest_fromReservation,
+    BoothDividerOpenRequest.fromReservation,
     ReservationEndpoints.info.table(),
-    DenormalizationCalculation(BoothDividerOpenRequest_proposedBy, Uuid.fromLongs(0, 0)) { it.user },
-    DenormalizationCalculation(BoothDividerOpenRequest_from, Instant.DISTANT_PAST) { it.at }
+    DenormalizationCalculation(BoothDividerOpenRequest.proposedBy, Uuid.fromLongs(0, 0)) { it.user },
+    DenormalizationCalculation(BoothDividerOpenRequest.from, Instant.DISTANT_PAST) { it.at }
 ).interceptCreate { request ->
     // ⚠️ request.proposedBy and request.from are NOT set yet!
     // Denormalization hasn't run - still have default values
@@ -532,10 +532,10 @@ val reservationInfo = database.modelInfo(
     permissions = {
         val user = auth.fetch()
         ModelPermissions(
-            create = condition { it.user eq user._id },
-            read = condition { it.user eq user._id },
-            update = condition { it.user eq user._id },
-            delete = condition { it.user eq user._id },
+            create = Condition { it.user eq user._id },
+            read = Condition { it.user eq user._id },
+            update = Condition { it.user eq user._id },
+            delete = Condition { it.user eq user._id },
             updateRestrictions = updateRestrictions {
                 it.user.cannotBeModified()      // Can't change owner
                 it.createdAt.cannotBeModified() // Can't change timestamp
@@ -548,7 +548,7 @@ val reservationInfo = database.modelInfo(
             // 1. VALIDATION ON CREATE
             .interceptCreate { reservation ->
                 // Check for time slot conflicts
-                val conflicts = info.table().find(condition {
+                val conflicts = info.table().find(Condition {
                     (it.booth eq reservation.booth) and
                     (it.at lt reservation.endsAt) and
                     (it.endsAt gt reservation.at) and
@@ -584,7 +584,7 @@ val reservationInfo = database.modelInfo(
             // 2. VALIDATION ON UPDATE
             .interceptChange { mod ->
                 // Validate status transitions
-                mod.vet(Reservation_status) { fieldMod ->
+                mod.vet(Reservation.status) { fieldMod ->
                     when (fieldMod) {
                         is Modification.Assign -> {
                             if (!isValidStatusTransition(fieldMod.value)) {
@@ -689,12 +689,12 @@ postPermissionsForUser = { table ->
 ```kotlin
 // ❌ WRONG - client can modify createdAt!
 ModelPermissions(
-    update = condition { it.user eq user._id }
+    update = Condition { it.user eq user._id }
 )
 
 // ✅ CORRECT - lock immutable fields
 ModelPermissions(
-    update = condition { it.user eq user._id },
+    update = Condition { it.user eq user._id },
     updateRestrictions = updateRestrictions {
         it.createdAt.cannotBeModified()
         it.user.cannotBeModified()

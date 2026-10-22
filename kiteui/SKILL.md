@@ -59,14 +59,14 @@ val filtered = remember { allUsers().filter { it.name.contains(query()) } }
 
 // ✅ CORRECT - server filters, only matching records sent
 val filtered = remember {
-    session.users.list(Query(condition {
+    session.users.list(Query(Condition {
         it.name.contains(query(), ignoreCase = true)
     }))()
 }
 
 // ✅ Multiple optional filters - Condition.andNotNull ignores nulls
 val items = remember {
-    session.items.list(Query(condition {
+    session.items.list(Query(Condition {
         Condition.andNotNull(
             tagFilter()?.let { tags -> it.tags any { t -> t inside tags } },
             dateFrom()?.let { d -> it.date gte d },
@@ -87,13 +87,13 @@ text { ::content { user()?.name ?: "Loading..." } }
 
 // Query (reactive list)
 val activeUsers = remember {
-    session.users.list(Query(condition { it.active eq true }))()
+    session.users.list(Query(Condition { it.active eq true }))()
 }
 forEach(activeUsers) { user -> text { ::content { user().name } } }
 
 // Modify (updates all views automatically)
 launch {
-    session.users[userId].modify(modification { it.name assign "New Name" })
+    session.users[userId].modify(Modification { it.name assign "New Name" })
 }
 
 // Insert new item — .add() returns the inserted T
@@ -102,7 +102,7 @@ launch { session.tasks.add(Task(_id = Task.ID(Uuid.random()), ...)) }
 // Search with debounce
 val searchDebounced = searchQuery.debounce(500)
 val results = remember {
-    session.users.list(Query(condition {
+    session.users.list(Query(Condition {
         if (searchDebounced().isEmpty()) Condition.Always
         else it.name.contains(searchDebounced(), ignoreCase = true)
     }))()
@@ -111,48 +111,27 @@ val results = remember {
 
 ## ⚠️ CRITICAL PITFALLS (Read First!)
 
-### P1. KSP `path` extension collisions — use subscript form `Model.path[Model_field]`
+### P1. Generated fields are paths — use `Model.field` directly
 
-KSP generates both `Model_field` (`SerializableProperty`) and `Model.path.field` (`DataClassPath`). Two collisions to watch for:
-
-1. **`name` field** — `Model.path.name` resolves to Kotlin's `KProperty.name` (wrong), not the generated path. Use `Model.path[Model_name]`.
-2. **Field whose name matches a class in scope** — e.g. `Message.path.channel` when a `Channel` class is imported resolves to the class, not the path. Use `Message.path[Message_channel]`.
-
-Escape hatch: subscript form always works:
-```kotlin
-// ❌ Ambiguous when field name collides with stdlib or imported class
-SortPart(Channel.path.name, ascending = true)     // resolves to KProperty.name!
-condition<Message> { it.channel eq channelId }    // 'channel' resolves to Channel class!
-
-// ✅ Subscript form bypasses all collisions
-SortPart(Channel.path[Channel_name], ascending = true)
-condition<Message> { it[Message_channel] eq channelId }
-```
-
-Imports needed (KSP-generated, in model's package):
-```kotlin
-import com.lightningkite.lskiteuistarter.Channel_name
-import com.lightningkite.lskiteuistarter.Message_channel
-```
-
-Verified: ChannelListScreen.kt, ChannelChatScreen.kt (demo/iter3-chat).
-
-### P2. `SortPart` takes `DataClassPath`, NOT `SerializableProperty`
-
-`Model_field` is a `SerializableProperty<Model, V>` — it won't compile in `SortPart`. Use `Model.path.field`, or the subscript form when the field name collides (see P1 above).
+KSP generates `Model.field` on the companion as a `Field<Model, V>`, which is a `Lens` and an `Optic`. Use it anywhere a path is expected; there is no `Model.path` or `Model_field` to reach for anymore (`Model.path` is deprecated).
 
 ```kotlin
-// ❌ WRONG — type mismatch: SerializableProperty vs DataClassPath
-orderBy = listOf(SortPart(Message_createdAt, ascending = true))
-
-// ✅ CORRECT — DataClassPath form
-orderBy = listOf(SortPart(Message.path.createdAt, ascending = true))
-
-// ✅ CORRECT — subscript form when name collides
-orderBy = listOf(SortPart(Channel.path[Channel_name], ascending = true))
+SortPart(Channel.name, ascending = true)
+Condition<Message> { it.channel eq channelId }
+Message.channel eq channelId                  // same condition, no lambda
+draft.lensPath(User.address.city)             // nested fields chain
 ```
 
-Verified: ChannelChatScreen.kt, ChannelListScreen.kt (demo/iter3-chat).
+Optic helpers (`notNull`, `elements`, `asType`, `Lens<T>()`) live in `com.lightningkite.services.database.optics`; import it next to `com.lightningkite.services.database.*`.
+
+### P2. `notNull` makes a path nullable-typed downstream
+
+Fields chain into `Lens` paths, which always reach their target. `notNull` (and `asType`, `elements`) produce an `Optic`, which may not. APIs that read through a path reflect that: `draft.lensPath(User.name)` is a `MutableReactive<String>`, while `draft.lensPath(User.address.notNull.city)` is a `MutableReactive<String?>`.
+
+```kotlin
+SortPart(Message.createdAt, ascending = true)          // fields work in SortPart
+Message.replyTo.notNull eq parentId                    // never matches a null replyTo
+```
 
 ### P3. Reading a reactive (e.g. `session()`) is suspend — can't call inside render-time lambdas
 
@@ -270,7 +249,7 @@ import com.lightningkite.reactive.extensions.withWrite
 // Bind a select to a server-backed field, writing back via modify()
 val statusBinding = taskReactive.withWrite { newStatus ->
     session().tasks[taskReactive()._id].modify(
-        modification<Task> { it.status assign newStatus }
+        Modification<Task> { it.status assign newStatus }
     )
 }
 select {
@@ -284,14 +263,14 @@ If `withWrite` feels too complex for the use case (e.g. a status transition grid
 
 Verified: `Select.kt` (`bind` requires `MutableReactive<T>`); `helpers.kt` in reactive library (`withWrite` definition).
 
-### P8. `condition<T> { }` builds a condition from a LAMBDA — use `Condition.Always` for "no filter"
+### P8. `Condition<T> { }` builds a condition from a LAMBDA — use `Condition.Always` for "no filter"
 
-`condition<T> { it.field eq x }` takes a lambda that builds a `Condition<T>`. For the unconstrained
-case (match everything), use the constant `Condition.Always` — NOT `condition<T> { true }`.
+`Condition<T> { it.field eq x }` takes a lambda that builds a `Condition<T>`. For the unconstrained
+case (match everything), use the constant `Condition.Always` — NOT `Condition<T> { true }`.
 
 ```kotlin
 val cond = if (query.isBlank()) Condition.Always
-           else condition<Contact> { it[Contact_name].contains(query, true) }
+           else Condition<Contact> { it.name.contains(query, true) }
 ```
 
 Aggregate calls like `count()` are also `suspend` — call them in `rememberSuspending { }`, not
@@ -786,8 +765,8 @@ val now = Clock.System.now()
 val upcomingEvents = remember {
     session().events.list(
         Query(
-            condition<Event> { it.startsAt gte now },
-            orderBy = listOf(SortPart(Event.path.startsAt, ascending = true))
+            Condition<Event> { it.startsAt gte now },
+            orderBy = listOf(SortPart(Event.startsAt, ascending = true))
         )
     )()
 }
@@ -820,10 +799,10 @@ val searchDebounced = search.debounce(400)
 val contacts = remember {
     val session = currentSession() ?: return@remember emptyList<Contact>()
     val cond = if (searchDebounced().isBlank()) Condition.Always
-               else condition<Contact> { it[Contact_name].contains(searchDebounced(), true) }
+               else Condition<Contact> { it.name.contains(searchDebounced(), true) }
     session.contacts.list(Query(
         condition = cond,
-        orderBy = listOf(SortPart(Contact.path[Contact_name], ascending = true)), // P2 + subscript (P1)
+        orderBy = listOf(SortPart(Contact.name, ascending = true)),
         skip = 0, limit = limit(),            // re-queries whenever limit() or search changes
     ))()
 }

@@ -49,7 +49,7 @@ card.link {
             confirmDanger("Move Tasks", "Move to this project?") {
                 taskIds.forEach { taskId ->
                     launch {
-                        session().task[taskId].modify(modification {
+                        session().task[taskId].modify(Modification {
                             it.project assign targetProject._id
                         })
                     }

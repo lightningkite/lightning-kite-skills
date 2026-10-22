@@ -7,9 +7,8 @@
 ### Basic Setup
 
 ```kotlin
-// Define your model with @GenerateDataClassPaths
-@Serializable
-@GenerateDataClassPaths
+// Define your model with @Queryable
+@Queryable
 data class Post(
     override val _id: Uuid = Uuid.random(),
     val title: String,
@@ -23,7 +22,7 @@ val postInfo = database.modelInfo(
     auth = UserAuth.require() or AuthRequirement.None,
     permissions = {
         val user = authOrNull?.fetch()
-        val isOwner = condition { it.authorId eqNn user?._id }
+        val isOwner = Condition { it.authorId eqNn user?._id }
 
         ModelPermissions(
             create = if (user != null) Condition.Always else Condition.Never,
@@ -82,10 +81,10 @@ val projectInfo = database.modelInfo(
 
             // Maintain denormalized fields
             .denormalize(
-                Project_organization,
-                Project_organizationName,
+                Project.organization,
+                Project.organizationName,
                 organizationTable,
-                Organization_name,
+                Organization.name,
                 null
             )
     }
@@ -103,23 +102,23 @@ val posts = database().table<Post>()
 posts.insertOne(Post(title = "Hello", content = "World"))
 
 // Query
-posts.find(condition { it.title eq "Hello" }).toList()
+posts.find(Condition { it.title eq "Hello" }).toList()
 
 // Update
 posts.updateOne(
-    condition { it._id eq id },
-    modification { it.title assign "Updated" }
+    Condition { it._id eq id },
+    Modification { it.title assign "Updated" }
 )
 
 // Delete
-posts.deleteMany(condition { it.authorId eq userId })
+posts.deleteMany(Condition { it.authorId eq userId })
 
 // Complex queries
 posts.find(
-    condition = condition {
+    condition = Condition {
         (it.title.contains("Kotlin")) and (it.createdAt gt yesterday)
     },
-    orderBy = listOf(SortPart(Post.path.createdAt, false)),
+    orderBy = listOf(SortPart(Post.createdAt, false)),
     skip = page * pageSize,
     limit = pageSize
 ).toList()
@@ -138,7 +137,7 @@ Validate modifications before they're applied to the database using `mod.vet()`:
 ```kotlin
 fun interceptChange(mod: Modification<Project>): Modification<Project> {
     // Validate specific field modifications
-    mod.vet(Project_projectTags) { fieldMod ->
+    mod.vet(Project.projectTags) { fieldMod ->
         when (fieldMod) {
             is Modification.Assign -> {
                 if (fieldMod.value.any { it != it.trim() })
@@ -179,13 +178,13 @@ suspend fun postChange(old: Project, new: Project) {
     if (old.name != new.name) {
         Server.tasks.info.baseTable()
             .updateManyIgnoringResult(
-                condition { it.project eq new._id },
-                modification { it.projectName assign new.name }
+                Condition { it.project eq new._id },
+                Modification { it.projectName assign new.name }
             )
         Server.timeEntries.info.baseTable()
             .updateManyIgnoringResult(
-                condition { it.project eq new._id },
-                modification { it.projectName assign new.name }
+                Condition { it.project eq new._id },
+                Modification { it.projectName assign new.name }
             )
     }
 }
@@ -194,7 +193,7 @@ context(runtime: ServerRuntime)
 suspend fun postDelete(project: Project) {
     // Clean up related records
     Server.tasks.info.baseTable()
-        .deleteManyIgnoringOld(condition { it.project eq project._id })
+        .deleteManyIgnoringOld(Condition { it.project eq project._id })
 }
 ```
 
@@ -226,15 +225,15 @@ object LikeEndpoints : ServerBuilder() {
                     change.old == null && change.new != null -> {
                         // Like created: increment post like count
                         PostEndpoints.info.table().updateOneIgnoringResult(
-                            condition<Post> { it._id eq change.new!!.postId },
-                            modification { it.likeCount += 1 }
+                            Condition<Post> { it._id eq change.new!!.postId },
+                            Modification { it.likeCount += 1 }
                         )
                     }
                     change.old != null && change.new == null -> {
                         // Like deleted: decrement
                         PostEndpoints.info.table().updateOneIgnoringResult(
-                            condition<Post> { it._id eq change.old!!.postId },
-                            modification { it.likeCount += -1 }
+                            Condition<Post> { it._id eq change.old!!.postId },
+                            Modification { it.likeCount += -1 }
                         )
                     }
                 }
@@ -249,20 +248,20 @@ object LikeEndpoints : ServerBuilder() {
 **Key points:**
 - `registerChangeListener` is called in an `init {}` block on the endpoint object
 - `changes.changes` is a list of `EntryChange<T>` with `.old` and `.new`; null old = create, null new = delete
-- The increment/decrement DSL is `modification { it.field += 1 }` — NOT `it.field increment 1`
+- The increment/decrement DSL is `Modification { it.field += 1 }` — NOT `it.field increment 1`
 
 ## Modification DSL: Increment/Decrement
 
-Use `+=` (with a positive or negative number) in the `modification {}` DSL — there is no `increment`/`decrement` infix operator:
+Use `+=` (with a positive or negative number) in the `Modification {}` DSL — there is no `increment`/`decrement` infix operator:
 
 ```kotlin
 // ✅ CORRECT
-modification { it.likeCount += 1 }
-modification { it.likeCount += -1 }
+Modification { it.likeCount += 1 }
+Modification { it.likeCount += -1 }
 
 // ❌ WRONG — does not exist
-modification { it.likeCount increment 1 }
-modification { it.likeCount decrement 1 }
+Modification { it.likeCount increment 1 }
+Modification { it.likeCount decrement 1 }
 ```
 
 ## REST PATCH with Modifications
@@ -340,8 +339,8 @@ suspend fun migrateCategories() {
     val projects = database().table<Project>().all().toList()
     for (project in projects) {
         database().table<Project>().updateOne(
-            condition { it._id eq project._id },
-            modification { it.categories assign project.legacyCategories.toSet() }
+            Condition { it._id eq project._id },
+            Modification { it.categories assign project.legacyCategories.toSet() }
         )
     }
 }

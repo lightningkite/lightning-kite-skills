@@ -25,7 +25,7 @@ val userInfo: ModelInfo<User, User, Uuid> = database.modelInfo(
     auth = UserAuth.require(),  // Required auth
     permissions = {
         val userRole = auth.userRole()  // Cached role check
-        val self = condition { it._id eq auth.id }
+        val self = Condition { it._id eq auth.id }
         val admin = if (userRole >= UserRole.Admin) Condition.Always else Condition.Never
 
         ModelPermissions(
@@ -200,7 +200,7 @@ object UserAuth : PrincipalType<User, Uuid> {
 permissions = {
     if (auth.isSuperUser()) return@permissions ModelPermissions.allowAll()
     val orgs = auth.activeOrganizations()
-    val orgCondition = condition { it.organization inside orgs }
+    val orgCondition = Condition { it.organization inside orgs }
 
     ModelPermissions(
         create = orgCondition,
@@ -232,7 +232,7 @@ object UserAuth : PrincipalType<User, Uuid> {
         "email" -> UserEndpoints.info.table()
             .run {
                 // Automatically creates user if doesn't exist
-                findOne(condition { it.email eq value.toEmailAddress() })
+                findOne(Condition { it.email eq value.toEmailAddress() })
                     ?: insertOne(User(email = value.toEmailAddress()))
             }
         else -> super.fetchByProperty(property, value)
@@ -289,7 +289,7 @@ onClick {
         val session = currentSession.awaitNotNull()
 
         // Modify user with ModelCache helper
-        session.users[session.userId].modify(modification {
+        session.users[session.userId].modify(Modification {
             it.name assign fullName.value
             it.phone assign phone.value
             it.emergencyContact assign emergencyContact.value

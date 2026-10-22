@@ -176,7 +176,7 @@ val cleanup = path.path("scheduled-cleanup") bind ScheduledTask(
     frequency = 1.hours
 ) {
     println("Running cleanup...")
-    database().table<OldData>().deleteMany(condition {
+    database().table<OldData>().deleteMany(Condition {
         it.createdAt lt Clock.System.now() - 30.days
     })
 }
@@ -187,13 +187,13 @@ val expireStaleReservations = path.path("scheduled").path("expire-reservations")
 ) {
     val now = Clock.System.now()
     val expiredCount = ReservationEndpoints.info.table().updateMany(
-        condition {
+        Condition {
             // Find tentative (has expireAt) reservations that have expired
             it.expireAt.notNull and
             (it.expireAt lt now) and
             it.cancelledAt.eq(null)
         },
-        modification {
+        Modification {
             it.cancelledAt assign now  // Mark as cancelled
         }
     )

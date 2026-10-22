@@ -627,8 +627,7 @@ button {
 ### Model Definition
 
 ```kotlin
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class ChatRoom(
     override val _id: Uuid = Uuid.random(),
     val name: String,
@@ -640,7 +639,7 @@ data class ChatRoom(
 **Important:**
 - Use `kotlin.time.Clock` not `kotlinx.datetime.Clock`
 - Use `kotlin.uuid.Uuid` for IDs
-- `@GenerateDataClassPaths` generates type-safe query paths
+- `@Queryable` generates a typed field per property (`User.email`); fields are paths
 - `@Index` for frequently queried fields
 - `@References` for foreign keys
 
@@ -654,9 +653,9 @@ object ChatRoomEndpoints : ServerBuilder() {
             val userId = auth.id
             ModelPermissions(
                 create = Condition.Always,
-                read = condition { it.createdBy eq userId },
-                update = condition { it.createdBy eq userId },
-                delete = condition { it.createdBy eq userId },
+                read = Condition { it.createdBy eq userId },
+                update = Condition { it.createdBy eq userId },
+                delete = Condition { it.createdBy eq userId },
             )
         }
     )
@@ -690,13 +689,13 @@ info.table().get(id)
 
 // Conditional query
 info.table().query(
-    condition = condition { it.userId eq userId },
+    condition = Condition { it.userId eq userId },
     orderBy = listOf(SortPart(Paths.createdAt, false)),
     limit = 50
 )
 
 // Update
-info.table().updateOneById(id, modification {
+info.table().updateOneById(id, Modification {
     it.field assign newValue
 })
 
@@ -759,7 +758,7 @@ val calculator = path.path("calc").post bind ApiHttpHandler(
 #### Database Modification DSL
 
 ```kotlin
-posts.updateOne(condition { it._id eq id }, modification {
+posts.updateOne(Condition { it._id eq id }, Modification {
     it.updatedAt assign Clock.System.now()
     it.viewCount += 1  // Increment
 
@@ -791,22 +790,22 @@ model.copy(memberIds = model.memberIds + newMemberId)
 
 ```kotlin
 // AND conditions
-val condition = condition {
+val condition = Condition {
     (it.postId eq postId) and (it.isApproved eq true)
 }
 
 // Multiple filters
-var condition: Condition<BlogPost> = condition { it.status eq PostStatus.PUBLISHED }
+var condition: Condition<BlogPost> = Condition { it.status eq PostStatus.PUBLISHED }
 if (tags.isNotEmpty()) {
     tags.forEach { tag ->
-        condition = condition and condition { it.tags.any { it.eq(tag) } }
+        condition = condition and Condition { it.tags.any { it.eq(tag) } }
     }
 }
 
 // With sorting and pagination
 posts.find(
     condition = condition,
-    orderBy = listOf(SortPart(BlogPost.path.createdAt, false)),
+    orderBy = listOf(SortPart(BlogPost.createdAt, false)),
     limit = 20,
     skip = 0
 ).toList()
@@ -878,10 +877,10 @@ val info = Server.database.modelInfo(
         val userId = auth.id
 
         ModelPermissions(
-            create = condition { it.ownerId eq userId },
-            read = condition { it.ownerId eq userId },
-            update = condition { it.ownerId eq userId },
-            delete = condition { it.ownerId eq userId },
+            create = Condition { it.ownerId eq userId },
+            read = Condition { it.ownerId eq userId },
+            update = Condition { it.ownerId eq userId },
+            delete = Condition { it.ownerId eq userId },
         )
     }
 )
@@ -895,14 +894,14 @@ create = Condition.Always,
 read = Condition.Always,
 
 // Owner-only access
-val isOwner = condition { it.userId eq auth.id }
+val isOwner = Condition { it.userId eq auth.id }
 create = isOwner,
 read = isOwner,
 update = isOwner,
 delete = isOwner,
 
 // Role-based access
-val isAdmin = condition { it.role inside allowedRoles }
+val isAdmin = Condition { it.role inside allowedRoles }
 delete = isAdmin,
 
 // Combined conditions
@@ -960,7 +959,7 @@ object RoomMembershipCache : AuthCacheKey<User, Set<Uuid>> {
     override suspend fun calculate(input: Authentication<User>): Set<Uuid> {
         // Access table through modelInfo for proper typing
         return Server.chatRooms.info.table().find(
-            condition { it.memberIds.any { it eq input.id } }
+            Condition { it.memberIds.any { it eq input.id } }
         ).toList().map { it._id }.toSet()
     }
 
@@ -977,8 +976,8 @@ val info = Server.database.modelInfo(
     permissions = {
         val userId = auth.id
         val userRoomIds = with(UserAuth.RoomMembershipCache) { auth.roomMemberships() }
-        val isAuthor = condition<Message> { it.authorId eq userId }
-        val inUserRoom = condition<Message> { it.chatRoomId inside userRoomIds }
+        val isAuthor = Condition<Message> { it.authorId eq userId }
+        val inUserRoom = Condition<Message> { it.chatRoomId inside userRoomIds }
 
         ModelPermissions(
             // Users can only create messages in rooms they're members of
@@ -999,13 +998,13 @@ When working with `Set<T>` fields in conditions:
 
 ```kotlin
 // Check if Set contains a value
-condition { it.memberIds.any { it eq userId } }
+Condition { it.memberIds.any { it eq userId } }
 
 // Check if value is in Set (inverse)
-condition { userId inside it.memberIds }
+Condition { userId inside it.memberIds }
 
 // Check if Set contains any of multiple values
-condition { it.tags.any { it inside allowedTags } }
+Condition { it.tags.any { it inside allowedTags } }
 
 // Runtime check (not in query)
 if (userId in room.memberIds) { /* user is member */ }
@@ -1023,8 +1022,8 @@ val info = Server.database.modelInfo(
         val userRoomIds = with(UserAuth.RoomMembershipCache) { auth.roomMemberships() }
 
         ModelPermissions(
-            create = condition { it.chatRoomId inside userRoomIds } and
-                     condition { it.authorId eq userId },
+            create = Condition { it.chatRoomId inside userRoomIds } and
+                     Condition { it.authorId eq userId },
             // ...
         )
     },
@@ -1076,7 +1075,7 @@ val info = modelInfo(
     permissions = {
         val userRoomIds = with(UserAuth.RoomMembershipCache) { auth.roomMemberships() }
         ModelPermissions(
-            create = condition { it.chatRoomId inside userRoomIds }
+            create = Condition { it.chatRoomId inside userRoomIds }
         )
     }
 )
@@ -1103,10 +1102,10 @@ Server.chatRooms.info.table()
 Server.database().table<ChatRoom>()
 
 // Convert query results to list
-table.find(condition { ... }).toList()
+table.find(Condition { ... }).toList()
 
 // Update with modification DSL
-table.updateOneById(id, modification {
+table.updateOneById(id, Modification {
     it.field assign newValue
 })
 ```
@@ -1157,7 +1156,7 @@ class ChatRoomEndpointsTest {
 
             // User2 should NOT be able to read it (if permissions are correct)
             val user2Rooms = Server.chatRooms.info.table().query(
-                Query(condition { it.createdBy eq user2._id })
+                Query(Condition { it.createdBy eq user2._id })
             )
             assertFalse(room._id in user2Rooms.map { it._id })
         }
@@ -1874,7 +1873,7 @@ class ServerIntegrationTest {
 
             users.insertOne(newUser)
 
-            val found = users.findOne(condition { it.email eq "test@example.com" })
+            val found = users.findOne(Condition { it.email eq "test@example.com" })
             assertNotNull(found)
             assertEquals("Test User", found.name)
         }
@@ -1910,7 +1909,7 @@ class ServerIntegrationTest {
             // Joiner joins the room using modification DSL
             chatRooms.updateOneById(
                 room._id,
-                modification { it.memberIds.assign(currentRoom.memberIds + joiner._id) }
+                Modification { it.memberIds.assign(currentRoom.memberIds + joiner._id) }
             )
 
             // Verify updated membership
@@ -1936,12 +1935,12 @@ class ServerIntegrationTest {
             messages.insertOne(Message(chatRoomId = roomId2, authorId = userId, content = "Room 2 Message"))
 
             // Query messages for room 1
-            val room1Messages = messages.query(Query(condition { it.chatRoomId eq roomId1 }))
+            val room1Messages = messages.query(Query(Condition { it.chatRoomId eq roomId1 }))
             assertEquals(2, room1Messages.size)
             assertTrue(room1Messages.all { it.chatRoomId == roomId1 })
 
             // Query messages for room 2
-            val room2Messages = messages.query(Query(condition { it.chatRoomId eq roomId2 }))
+            val room2Messages = messages.query(Query(Condition { it.chatRoomId eq roomId2 }))
             assertEquals(1, room2Messages.size)
         }
     }
@@ -2007,7 +2006,7 @@ val edit = path.path("edit").post bind ApiHttpHandler(
         }
 
         // Update the message content and editedAt timestamp
-        info.table().updateOneById(request.messageId, modification {
+        info.table().updateOneById(request.messageId, Modification {
             it.content assign request.newContent
             it.editedAt assign Clock.System.now()
         })
@@ -2020,7 +2019,7 @@ val edit = path.path("edit").post bind ApiHttpHandler(
 **Key patterns:**
 - Manual permission check for operations that ModelPermissions can't express
 - Fetch before update to validate ownership
-- Use `modification {}` DSL for field-level updates
+- Use `Modification {}` DSL for field-level updates
 - Update timestamp fields when editing (editedAt pattern)
 - Return updated entity for client to use
 
@@ -2169,8 +2168,7 @@ Common pattern for tracking modifications to entities:
 
 **Model with editedAt field:**
 ```kotlin
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class Message(
     override val _id: Uuid = Uuid.random(),
     val chatRoomId: Uuid,
@@ -2183,7 +2181,7 @@ data class Message(
 
 **Update pattern:**
 ```kotlin
-info.table().updateOneById(id, modification {
+info.table().updateOneById(id, Modification {
     it.content assign newContent
     it.editedAt assign Clock.System.now()  // Mark as edited
 })
@@ -2216,7 +2214,7 @@ row {
 ```kotlin
 // ✅ ModelPermissions: Simple owner-only access
 permissions = {
-    val isAuthor = condition { it.authorId eq auth.id }
+    val isAuthor = Condition { it.authorId eq auth.id }
     ModelPermissions(update = isAuthor)
 }
 

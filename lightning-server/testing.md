@@ -135,11 +135,11 @@ MembershipEndpoints.rest.insert.test(auth, membership)
 **`ModelRestEndpoints + ModelRestUpdatesWebsocket`** (combines into `ModelRestEndpointsAndUpdatesWebsocket`):
 ```kotlin
 // UserEndpoints in the starter:
-val rest = path.path("rest") include ModelRestEndpoints(info) + ModelRestUpdatesWebsocket(info, User_email)
+val rest = path.path("rest") include ModelRestEndpoints(info) + ModelRestUpdatesWebsocket(info, User.email)
 // The combined type wraps the REST endpoints under .endpoints:
 UserEndpoints.rest.endpoints.detail.test(userId, auth, Unit)
 UserEndpoints.rest.endpoints.list.test(auth, Query<User>())
-UserEndpoints.rest.endpoints.modify.test(userId, auth, modification { it.name assign "New" })
+UserEndpoints.rest.endpoints.modify.test(userId, auth, Modification { it.name assign "New" })
 ```
 
 The delete operation on a `ModelRestEndpoints` is `.deleteItem`, not `.delete`:
@@ -275,7 +275,7 @@ object PendingInputEndpoints : ServerBuilder() {
             }
 
             // Update database
-            info.table().updateOneById(request.inputId, modification<PendingInput> {
+            info.table().updateOneById(request.inputId, Modification<PendingInput> {
                 it.status assign InputStatus.RESOLVED
                 it.response assign request.response
                 it.resolvedAt assign Clock.System.now()

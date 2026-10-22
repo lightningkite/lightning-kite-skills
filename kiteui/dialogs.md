@@ -120,7 +120,7 @@ fun ViewWriter.EditItemSheet(item: Item, onSave: () -> Unit) {
                 text { content = "Save" }
                 action = Action("Save") {
                     val session = currentSession.await() ?: return@Action
-                    session.items[item._id].modify(modification {
+                    session.items[item._id].modify(Modification {
                         it.name assign nameInput.value
                         it.description assign descriptionInput.value
                     })

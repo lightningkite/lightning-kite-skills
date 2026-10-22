@@ -106,7 +106,7 @@ text { ::content { user()?.name ?: "Loading..." } }
 ```kotlin
 val activeUsers = remember {
     session.users.list(
-        query = Query(condition { it.active eq true }),
+        query = Query(Condition { it.active eq true }),
         maximumAge = 10.seconds,
         pullFrequency = 30.seconds
     )()  // Call operator returns Reactive<List<User>>
@@ -153,7 +153,7 @@ val currentOrgId = Signal<Uuid?>(null)
 val myOrganizations = remember {
     val orgIds = self().organizationIds
     session.organizations.list(
-        query = Query(condition { it._id inside orgIds })
+        query = Query(Condition { it._id inside orgIds })
     )()
 }
 
@@ -224,18 +224,18 @@ Use bracket notation `cache[id].modify()` for modifications:
 
 ```kotlin
 // Modify a single field
-session.users[userId].modify(modification {
+session.users[userId].modify(Modification {
     it.name assign "New Name"
 })
 
 // Modify multiple fields
-session.reservations[reservationId].modify(modification {
+session.reservations[reservationId].modify(Modification {
     it.checkedInAt assign kotlin.time.Clock.System.now()
     it.beforeImages assign imageSet
 })
 
 // Modify based on current value
-session.counters[counterId].modify(modification {
+session.counters[counterId].modify(Modification {
     it.count.increment(1)
 })
 ```
@@ -291,7 +291,7 @@ object MembersScreen : Page {
     val searchedUsersMeta = remember {
         val q = searchQueryDebounced()
         currentSessionNotNull().users.list(
-            Query(condition {
+            Query(Condition {
                 if(q.isEmpty()) Condition.Always
                 else Condition.And(q.split(' ').map { p ->
                     it.name.contains(p, ignoreCase = true)
@@ -350,7 +350,7 @@ val items = remember {
 
     s.items.list(
         query = Query(
-            condition = condition<MyItem> {
+            condition = Condition<MyItem> {
                 Condition.andNotNull(
                     // Only add each filter when its Signal has a value
                     selected.takeIf { it.isNotEmpty() }?.let { tags ->
@@ -402,16 +402,16 @@ import com.lightningkite.services.database.contains
 → Use labeled return: `return@reactive` or `return@launch`
 
 **"Unresolved reference: name" (in modification block)**
-→ Don't import field paths at top level - they're auto-provided in `modification {}`
+→ Don't import field paths at top level - they're auto-provided in `Modification {}`
 
 **"Type mismatch: required Modification<T>, found Unit"**
-→ You're in a `modification {}` block - use `assign` not `=`
+→ You're in a `Modification {}` block - use `assign` not `=`
 ```kotlin
 // ❌ Wrong
-modification { it.name = "value" }
+Modification { it.name = "value" }
 
 // ✅ Correct
-modification { it.name assign "value" }
+Modification { it.name assign "value" }
 ```
 
 ## Common Gotchas

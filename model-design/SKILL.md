@@ -26,19 +26,19 @@ This skill guides the design of data models for Lightning Server applications, b
 enum class OrderStatus { Draft, Submitted, Paid, Shipped, Delivered, Cancelled }
 
 data class Order(
-    val _id: UUID,
+    val _id: Uuid,
     val status: OrderStatus,  // WRONG - backs you into a corner
 )
 
 // ✅ GOOD: Facts with timestamps
 data class Order(
-    override val _id: UUID = UUID.random(),
+    override val _id: Uuid = Uuid.random(),
     val submitted: Instant? = null,
     val paid: Instant? = null,
     val shipped: Instant? = null,
     val delivered: Instant? = null,
     val cancelled: Instant? = null,
-) : HasId<UUID> {
+) : HasId<Uuid> {
     // Compute "status" for display if needed
     val currentStatus: String get() = when {
         cancelled != null -> "Cancelled"
@@ -73,27 +73,25 @@ Separate append-only event records from mutable entity state:
 
 ```kotlin
 // Event/Transaction - IMMUTABLE, append-only
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class Transaction(
-    override val _id: UUID = UUID.random(),
-    @Index @References(Account::class) val accountId: UUID,
+    override val _id: Uuid = Uuid.random(),
+    @Index @References(Account::class) val accountId: Uuid,
     val type: TransactionType,
     val amount: Int,
     val balanceAfter: Int,
     val createdAt: Instant = now(),
     // NO modifiedAt - events are immutable
-) : HasId<UUID>
+) : HasId<Uuid>
 
 // Entity - MUTABLE state
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class Account(
-    override val _id: UUID = UUID.random(),
+    override val _id: Uuid = Uuid.random(),
     val balance: Int = 0,
     val createdAt: Instant = now(),
     val modifiedAt: Instant = now(),  // Updated on changes
-) : HasId<UUID>
+) : HasId<Uuid>
 ```
 
 The event stream is the source of truth; entity state is a projection/cache.
@@ -149,12 +147,12 @@ Models aren't just data containers - they encode business rules:
 
 ```kotlin
 data class Promotion(
-    override val _id: UUID = UUID.random(),
+    override val _id: Uuid = Uuid.random(),
     val bonusPoints: Int,
     val config: PromotionConfig,
     val startsAt: Instant,
     val endsAt: Instant? = null,
-) : HasId<UUID> {
+) : HasId<Uuid> {
 
     suspend fun qualifiesFor(customer: Customer, subtotal: Double): Boolean = when {
         config.cashThreshold != null -> subtotal >= config.cashThreshold
@@ -178,26 +176,25 @@ data class Promotion(
 ### Basic Model Template
 
 ```kotlin
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class ModelName(
-    override val _id: UUID = UUID.random(),
+    override val _id: Uuid = Uuid.random(),
     // Required fields (no defaults)
     val requiredField: String,
     // Optional fields with sensible defaults
     val optionalField: String? = null,
     val listField: List<Item> = emptyList(),
-    val setField: Set<UUID> = emptySet(),
+    val setField: Set<Uuid> = emptySet(),
     val flag: Boolean = false,
     val createdAt: Instant = now(),
-) : HasId<UUID>
+) : HasId<Uuid>
 ```
 
 ### ID Type Selection
 
 | ID Type | Use Case | Example |
 |---------|----------|---------|
-| `UUID` | Default for internal entities | `User`, `Order`, `Vehicle` |
+| `Uuid` | Default for internal entities | `User`, `Order`, `Vehicle` |
 | `String` | External system IDs or semantic keys | `MerchantStore._id = "shop.myshopify.com"` |
 | `String` | Human-readable composite keys | `Firmware._id = "$type-$version"` |
 | `LocalDate` | Date-keyed singleton records | `DailyStats._id: LocalDate` (one per day) |
@@ -208,18 +205,16 @@ data class ModelName(
 When a relationship itself has data:
 
 ```kotlin
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class DealershipVehiclePair(
-    @References(Dealership::class) val dealership: UUID,
-    @References(Vehicle::class) val vehicle: UUID,
+    @References(Dealership::class) val dealership: Uuid,
+    @References(Vehicle::class) val vehicle: Uuid,
 ) : Comparable<DealershipVehiclePair> {
     override fun compareTo(other: DealershipVehiclePair): Int =
         compareValuesBy(this, other, { it.dealership }, { it.vehicle })
 }
 
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class VehicleRelationship(
     override val _id: DealershipVehiclePair,  // Composite ID
     val favorite: Boolean = false,
@@ -236,10 +231,10 @@ data class VehicleRelationship(
 
 ```kotlin
 // Single reference
-@References(User::class) val createdBy: UUID
+@References(User::class) val createdBy: Uuid
 
 // Multiple references (Set)
-@MultipleReferences(Tag::class) val tags: Set<UUID> = emptySet()
+@MultipleReferences(Tag::class) val tags: Set<Uuid> = emptySet()
 
 // Indexed reference (for frequent queries)
 @Index @References(MerchantStore::class) val merchantStoreId: String
@@ -250,19 +245,18 @@ data class VehicleRelationship(
 Copy data from related entities to avoid joins:
 
 ```kotlin
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class Lot(
-    override val _id: UUID = UUID.random(),
-    @References(AuctionDay::class) val auctionDay: UUID,
+    override val _id: Uuid = Uuid.random(),
+    @References(AuctionDay::class) val auctionDay: Uuid,
 
     // Denormalized copies - updated when source changes
-    @Denormalized @References(Auction::class) val auction: UUID,
-    @Denormalized @References(Venue::class) val venue: UUID,
+    @Denormalized @References(Auction::class) val auction: Uuid,
+    @Denormalized @References(Venue::class) val venue: Uuid,
     @Denormalized val auctionDate: LocalDate,
     @Denormalized val city: String? = null,
     @Denormalized val state: String? = null,
-) : HasId<UUID>
+) : HasId<Uuid>
 ```
 
 ### Projection Pattern (Lightweight Views)
@@ -271,10 +265,9 @@ Create summary models for list/search views:
 
 ```kotlin
 // Full model with all details
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class Vehicle(
-    override val _id: UUID = UUID.random(),
+    override val _id: Uuid = Uuid.random(),
     val vin: String,
     val make: String,
     val model: String,
@@ -283,18 +276,17 @@ data class Vehicle(
     val images: List<ServerFile> = emptyList(),
     val inspectionReport: InspectionReport? = null,
     // ... many more fields
-) : HasId<UUID>
+) : HasId<Uuid>
 
 // Lightweight projection for lists
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class ShortVehicle(
-    override val _id: UUID,
+    override val _id: Uuid,
     val vin: String,
     val make: String,
     val model: String,
     val year: Int,
-) : HasId<UUID>
+) : HasId<Uuid>
 
 // Extension to create projection
 fun Vehicle.short() = ShortVehicle(
@@ -315,8 +307,7 @@ fun Vehicle.short() = ShortVehicle(
 When exactly one option should be selected:
 
 ```kotlin
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class PromotionConfig(
     val cashThreshold: Double? = null,
     val returningCustomer: ReturningCustomerConfig? = null,
@@ -326,14 +317,12 @@ data class PromotionConfig(
     // Exactly ONE of these should be non-null
 )
 
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class ReturningCustomerConfig(
     val timeFrameDays: Int,
 )
 
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class ProductQuantityConfig(
     val productId: String,
     val minQuantity: Int,
@@ -366,8 +355,7 @@ data class User(
     }
 }
 
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class NotificationSettings(
     val push: Boolean = true,
     val email: Boolean = false,
@@ -381,38 +369,35 @@ data class NotificationSettings(
 
 ### Top-Level (Has own collection)
 - Has `HasId<T>` interface
-- Gets `@GenerateDataClassPaths`
+- Gets `@Queryable`
 - Queried independently
 - Has its own lifecycle
 
 ### Embedded (Nested in other models)
-- Has `@GenerateDataClassPaths` (for path access)
+- Has `@Queryable` (for path access)
 - Does NOT implement `HasId`
 - Lives inside parent document
 - Lifecycle tied to parent
 
 ```kotlin
 // Top-level: Own collection
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class Order(
-    override val _id: UUID = UUID.random(),
+    override val _id: Uuid = Uuid.random(),
     val items: List<OrderItem> = emptyList(),  // Embedded list
     val shippingAddress: Address,              // Embedded object
-) : HasId<UUID>
+) : HasId<Uuid>
 
 // Embedded: Lives inside Order
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class OrderItem(
-    val productId: UUID,
+    val productId: Uuid,
     val quantity: Int,
     val priceAtPurchase: Int,
 )
 
 // Embedded: Reusable value object
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class Address(
     val street: String,
     val city: String,
@@ -429,17 +414,16 @@ data class Address(
 Scope all tenant data with a reference:
 
 ```kotlin
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class Product(
-    override val _id: UUID = UUID.random(),
+    override val _id: Uuid = Uuid.random(),
     @Index @References(MerchantStore::class) val merchantStoreId: String,
     val name: String,
     val price: Int,
-) : HasId<UUID>
+) : HasId<Uuid>
 
 // In permissions, always scope by tenant:
-// condition { it.merchantStoreId eq currentTenantId }
+// Condition { it.merchantStoreId eq currentTenantId }
 ```
 
 ---
@@ -449,15 +433,14 @@ data class Product(
 ### Empty/Default Instances for Forms
 
 ```kotlin
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class Auction(
-    override val _id: UUID = UUID.random(),
+    override val _id: Uuid = Uuid.random(),
     val name: String,
-    @References(Venue::class) val venue: UUID,
+    @References(Venue::class) val venue: Uuid,
     val startDate: LocalDate,
     val endDate: LocalDate,
-) : HasId<UUID> {
+) : HasId<Uuid> {
     companion object {
         val EMPTY = Auction(
             name = "",
@@ -473,21 +456,21 @@ data class Auction(
 
 ```kotlin
 data class Subscription(
-    override val _id: UUID = UUID.random(),
-    @References(User::class) val user: UUID,
+    override val _id: Uuid = Uuid.random(),
+    @References(User::class) val user: Uuid,
     val productId: String,
     val expires: Instant,
     val startTime: Instant,
-) : HasId<UUID> {
+) : HasId<Uuid> {
     companion object {
-        fun freeTier(userId: UUID) = Subscription(
+        fun freeTier(userId: Uuid) = Subscription(
             user = userId,
             productId = "FREE_TIER",
             expires = Instant.DISTANT_FUTURE,
             startTime = now(),
         )
 
-        fun trial(userId: UUID, days: Int = 14) = Subscription(
+        fun trial(userId: Uuid, days: Int = 14) = Subscription(
             user = userId,
             productId = "TRIAL",
             expires = now().plus(days.days),
@@ -505,11 +488,11 @@ data class Subscription(
 |------------|---------|---------|
 | `@Index` | Query optimization | `@Index val email: String` |
 | `@Unique` | Unique constraint | `@Unique val email: String` |
-| `@References(T::class)` | Foreign key | `@References(User::class) val owner: UUID` |
-| `@MultipleReferences(T::class)` | Set of foreign keys | `@MultipleReferences(Tag::class) val tags: Set<UUID>` |
+| `@References(T::class)` | Foreign key | `@References(User::class) val owner: Uuid` |
+| `@MultipleReferences(T::class)` | Set of foreign keys | `@MultipleReferences(Tag::class) val tags: Set<Uuid>` |
 | `@Denormalized` | Copied/cached data | `@Denormalized val ownerName: String` |
 | `@MaxLength(storage, display)` | String length limit | `@MaxLength(256, 64) val name: String` |
-| `@MaxSize(n)` | Collection size limit | `@MaxSize(20) val tags: Set<UUID>` |
+| `@MaxSize(n)` | Collection size limit | `@MaxSize(20) val tags: Set<Uuid>` |
 | `@IntegerRange(min, max)` | Numeric bounds | `@IntegerRange(0, 1_000_000) val odometer: Int` |
 | `@MimeType(types, maxSize)` | File upload constraints | `@MimeType("image/*", maxSize = 10_000_000) val photo: ServerFile?` |
 | `@Description(text)` | API documentation | `@Description("User's display name") val name: String` |
@@ -579,8 +562,6 @@ enum class OrderStatus {
 ## Example: Complete Domain Model
 
 ```kotlin
-@file:UseContextualSerialization(Instant::class, UUID::class, ServerFile::class, LocalDate::class)
-
 package com.example.shop
 
 // Type aliases for domain language
@@ -601,11 +582,10 @@ value class Money(val cents: PriceInCents) {
 enum class UserRole { Customer, Staff, Admin, Root }
 
 // Entity with timestamps for state
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class Order(
-    override val _id: UUID = UUID.random(),
-    @Index @References(User::class) val customer: UUID,
+    override val _id: Uuid = Uuid.random(),
+    @Index @References(User::class) val customer: Uuid,
     val items: List<OrderItem> = emptyList(),
     val shippingAddress: Address,
 
@@ -617,7 +597,7 @@ data class Order(
     val delivered: Instant? = null,
     val cancelled: Instant? = null,
     val cancelReason: String? = null,
-) : HasId<UUID> {
+) : HasId<Uuid> {
 
     // Computed state
     val status: String get() = when {
@@ -646,17 +626,15 @@ data class Order(
 }
 
 // Embedded value object
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class OrderItem(
-    @References(Product::class) val productId: UUID,
+    @References(Product::class) val productId: Uuid,
     val quantity: Quantity,
     val priceAtPurchase: PriceInCents,  // Captured at order time
 )
 
 // Embedded value object
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class Address(
     val street: String,
     val city: String,
@@ -670,16 +648,15 @@ data class Address(
 }
 
 // Immutable event record
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class OrderEvent(
-    override val _id: UUID = UUID.random(),
-    @Index @References(Order::class) val orderId: UUID,
+    override val _id: Uuid = Uuid.random(),
+    @Index @References(Order::class) val orderId: Uuid,
     val type: OrderEventType,
     val at: Instant = now(),
-    @References(User::class) val by: UUID? = null,
+    @References(User::class) val by: Uuid? = null,
     val notes: String? = null,
-) : HasId<UUID>
+) : HasId<Uuid>
 
 @Serializable
 enum class OrderEventType {
@@ -699,8 +676,7 @@ When a model is needed by both server (JVM) and client (JS/iOS), put it in a mul
 // Server has embedding field, client doesn't — diverges over time
 
 // ✅ GOOD: Single model in multiplatform -shared module (e.g., ai-shared)
-@GenerateDataClassPaths
-@Serializable
+@Queryable
 public data class KnowledgeEntry(
     override val _id: Uuid = Uuid.random(),
     val label: String,
@@ -717,7 +693,7 @@ public data class KnowledgeEntry(
 
 **Key rules:**
 - Put shared models in a multiplatform module (e.g., `my-shared`) that compiles for all targets (JVM, JS, iOS)
-- Use `@GenerateDataClassPaths` so DataClassPath extensions are available everywhere
+- Use `@Queryable` so generated fields (`Model.field`) are available everywhere
 - Make server-only fields **nullable with defaults** (e.g., `embedding: Embedding? = null`) — client creates entries without them, server populates them
 - Use `Clock.System.now()` as default for timestamps — cleaner than making them nullable
 - For vector/embedding fields, keep nullable (not empty) — vector indexes expect specific dimensions

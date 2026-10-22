@@ -59,8 +59,7 @@ object MyServer : ServerBuilder() {
 **Always use ModelRestEndpoints for CRUD operations:**
 
 ```kotlin
-@Serializable
-@GenerateDataClassPaths
+@Queryable
 data class Post(
     override val _id: Uuid = Uuid.random(),
     val title: String,
@@ -70,7 +69,7 @@ data class Post(
 val postInfo = database.modelInfo(
     auth = UserAuth.require(),
     permissions = {
-        val isOwner = condition { it.authorId eq auth.id }
+        val isOwner = Condition { it.authorId eq auth.id }
         ModelPermissions(
             create = Condition.Always,
             read = Condition.Always,
@@ -208,7 +207,7 @@ EventEndpoints.rest.list.test(auth, Query())
 // ✅ CORRECT — ops live under .rest.endpoints.<op>
 EventEndpoints.rest.endpoints.insert.test(auth, event)
 EventEndpoints.rest.endpoints.list.test(auth, Query())
-EventEndpoints.rest.endpoints.modify.test(id, auth, modification { ... })
+EventEndpoints.rest.endpoints.modify.test(id, auth, Modification { ... })
 EventEndpoints.rest.endpoints.deleteItem.test(id, auth, Unit)
 ```
 
@@ -220,7 +219,7 @@ val rest = path include ModelRestEndpoints(info)
 
 // ✅ CORRECT for plain ModelRestEndpoints
 MessageEndpoints.rest.insert.test(auth, message)
-MessageEndpoints.rest.modify.test(id, auth, modification { ... })
+MessageEndpoints.rest.modify.test(id, auth, Modification { ... })
 MessageEndpoints.rest.deleteItem.test(id, auth, Unit)
 ```
 
@@ -261,7 +260,7 @@ Verified: MessageEndpoints.kt (demo/iter3-chat).
 ❌ Call Server.build() multiple times in tests
 ❌ Assume denormalized fields exist in interceptCreate
 ❌ Use `kotlin.time.DateTimeUnit` (use `kotlinx.datetime`)
-❌ Forget @GenerateDataClassPaths on models
+❌ Forget @Queryable on models
 ❌ Allow users to update their own record without `updateRestrictions` — they can escalate `role` fields!
 ❌ Forget MetaEndpoints — no health checks, no bulk API, no OpenAPI docs
 ❌ Duplicate models across server/client — use a multiplatform `-shared` module instead

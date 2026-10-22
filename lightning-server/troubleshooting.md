@@ -32,17 +32,20 @@ import kotlinx.coroutines.flow.toList
 - Using `.value` on `DayOfWeek` (doesn't exist) - use `.ordinal` instead (0-6 where Monday=0)
 - Forgetting to import database query operators like `lt`, `gte`, etc.
 
-## Type Inference Issues with DataClassPath
+## Type Inference Issues with Optic
 
-If you see "Cannot infer type parameter 'ROOT'" errors, ensure you're using generated path constants correctly:
+If you see "Cannot infer type parameter" errors from `Condition { ... }`, the builder can't tell which model it's for. Give it the type, or skip the lambda and use the generated fields directly:
 
 ```kotlin
-// ✅ Correct - using generated path constant
-condition { it.user eq userId }
+// ✅ Generated fields are paths
+User.email eq "test@example.com"
+Condition<User> { it.email eq "test@example.com" }
 
-// ❌ Wrong - missing context or incorrect path usage
-condition { User_email eq "test@example.com" }  // Need it.email, not User_email
+// ❌ No type to infer from
+val c = Condition { it.email eq "test@example.com" }
 ```
+
+If `notNull`, `elements`, or `Lens` are unresolved, add `import com.lightningkite.services.database.optics.*`.
 
 ## Denormalization Not Working
 
@@ -121,36 +124,32 @@ First run generates `settings.json`:
 }
 ```
 
-## SortPart: Use `Model.path.field`, not `Model_field`
+## SortPart: pass the generated field
 
-`SortPart` takes a `DataClassPath`, not a `SerializableProperty`. The generated `Model_field` symbol is a `SerializableProperty` — the wrong type. Always use the `.path.` accessor:
+Generated fields (`Post.createdAt`) are paths, so they go straight into `SortPart`, conditions, and modifications. `Post.path.createdAt` and `Post_createdAt` are from older versions.
 
 ```kotlin
-// ❌ WRONG — compile error: type mismatch (SerializableProperty vs DataClassPath)
-orderBy = listOf(SortPart(Post_createdAt, ascending = false))
-
-// ✅ CORRECT
-orderBy = listOf(SortPart(Post.path.createdAt, ascending = false))
+orderBy = listOf(SortPart(Post.createdAt, ascending = false), SortPart(Post._id))
 ```
 
 ## Disambiguating conditions with multiple models in scope
 
-When multiple model types are in scope (e.g. in a custom endpoint body that works with `Post`, `Follow`, `Like`), the `condition {}` lambda can fail to infer the type. Use an explicit type parameter and/or explicit lambda parameter name:
+When multiple model types are in scope (e.g. in a custom endpoint body that works with `Post`, `Follow`, `Like`), the `Condition {}` lambda can fail to infer the type. Use an explicit type parameter and/or explicit lambda parameter name:
 
 ```kotlin
 // ✅ Explicit type parameter
-condition<Follow> { it.follower eq auth.id }
+Condition<Follow> { it.follower eq auth.id }
 
 // ✅ Explicit lambda param (also helps with nested conditions)
-condition<Post> { post -> post.author inside followedIds }
+Condition<Post> { post -> post.author inside followedIds }
 ```
 
 ## Field naming: avoid `post` — conflicts with HTTP routing verb
 
-Do not name a model field `post` (e.g. `data class Like(val post: Post.ID)`). The generated `DataClassPath.post` collides with the `com.lightningkite.lightningserver.http.post` HTTP routing extension, causing an ambiguous reference compile error. Use `postId` or another unambiguous name instead:
+Do not name a model field `post` (e.g. `data class Like(val post: Post.ID)`). The generated `Optic.post` collides with the `com.lightningkite.lightningserver.http.post` HTTP routing extension, causing an ambiguous reference compile error. Use `postId` or another unambiguous name instead:
 
 ```kotlin
-// ❌ WRONG — generates DataClassPath.post which conflicts with http.post verb
+// ❌ WRONG — generates Optic.post which conflicts with http.post verb
 data class Like(val post: Post.ID, ...)
 
 // ✅ CORRECT
@@ -178,7 +177,7 @@ import com.lightningkite.toEmailAddress
 ❌ Don't access database implementations directly
 ❌ Don't hardcode configuration
 ❌ Don't skip endpoint reference storage
-❌ Don't forget @GenerateDataClassPaths
+❌ Don't forget @Queryable on database models
 ❌ Don't use plain HttpHandler for APIs (use typed endpoints)
 ❌ Don't test against real services
 ❌ Don't write manual list/get/create/update/delete endpoints when ModelRestEndpoints can do it
@@ -192,7 +191,7 @@ import com.lightningkite.toEmailAddress
 4. **Test with Mocks** - Use JsonFileDatabase, RAM cache for tests
 5. **Store Endpoint References** - Keep constants for all endpoints
 6. **Group Endpoints Logically** - Use ServerBuilder objects
-7. **Type Safety** - Use @GenerateDataClassPaths on all database models
+7. **Type Safety** - Use @Queryable on all database models
 8. **Document Typed Endpoints** - Add summaries and descriptions
 9. **Read This Skill First** - When working on Lightning Server files, read this skill to understand patterns
 

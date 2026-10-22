@@ -17,6 +17,7 @@ SKILLS=(
     "model-design"
     "service-abstractions"
     "estimation"
+    "service-abstractions-1.4-migration"
 )
 
 uninstall() {
