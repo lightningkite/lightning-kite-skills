@@ -202,6 +202,43 @@ These ship together with 1.4 and usually show up in the same migration:
 - **LS-KiteUI lens helpers moved to `com.lightningkite.optics`**: `lens`, `asString` used to live in `com.lightningkite.serialization`, with no alias left behind, so old imports fail with `Unresolved reference 'lens'`. Rewrite `import com.lightningkite.serialization.(lens|asString|withStringBuffer)` to `import com.lightningkite.optics.$1`. The deprecated `lensPath` overloads stay in `com.lightningkite.serialization`. `lensPath(path)` is deprecated with a `ReplaceWith`. The lambda form `lensPath { it.address.city }` is deprecated with no `lens` equivalent (`lens { … }` is the reactive library's read-only getter lens); it only accepts lambdas that return a `Lens`, so paths ending in `notNull`, `asType` or `elements` must be passed directly.
 - **LS-KiteUI `ensureTotal`** and `SortPart` take fields directly: `SortPart(User._id)`.
 
+- **Full-text search moved from a condition to its own query.** `Condition.FullTextSearch` / `it.fullTextSearch(s)` is gone, so a search can no longer be AND-ed into a `Condition`. Use LS-KiteUI's `MaybeTextIndexQuery` (`com.lightningkite.lightningserver.db`) and `ModelCache.listOrTextSearch`:
+
+  ```kotlin
+  // 1.3
+  cache.list(Query(Condition.And(listOfNotNull(filter, search.takeUnless { it.isBlank() }?.let { c -> Condition { it.fullTextSearch(c) } })), orderBy, limit = 20), …)
+
+  // 1.4: keep the search out of the condition; query = null means a plain filter query
+  val query = MaybeTextIndexQuery(
+      query = search.takeUnless { it.isBlank() },
+      condition = filter,
+      orderBy = orderBy,   // ignored when searching: results come back by relevance
+      limit = 20,
+  )
+  val items = cache.listOrTextSearch(query, maximumAge, pullFrequency)   // Reactive<List<T>>
+  ```
+
+  Things that follow from it:
+  - A `Query` becomes `MaybeTextIndexQuery.Filter`, a `TextIndexQuery` becomes `MaybeTextIndexQuery.Search`. Code that takes a per-search-string query lambda (pickers, autocompletes) should return `MaybeTextIndexQuery` instead of `Query`.
+  - `listOrTextSearch` returns a `Reactive<List<T>>`. A filter query gives the cache's live `LimitReactiveList`; a text search skips the cache (`skipCache.textQuery`) and gives a plain reactive list that is *not* a `LimitReactiveList`, so it has no growable limit. UI built on that list (infinite scroll, `limit` bumps) must check `is LimitReactiveList` and treat the text-search case as a single fixed page.
+  - Manual paging against `skipCache.query(Query(…, skip, limit))` has a text equivalent: `skipCache.textQuery(TextIndexQuery(search, condition, skip, limit))`, which returns `ScoredResult`s (`.model`).
+  - Text queries ignore sort. Drop any sort that only existed to order search results.
+  - Search strings that can't match a text index (a pure number looked up against a numeric id) should still become a normal condition on that field, with `query = null`. Some databases also forbid text search inside `$or`, so don't combine them.
+  - Only `fullTextSearch` is affected. Search done with `contains` on string fields is still a normal condition.
+
+- **Reactive `validateReactive` / `assertReactive` / `auditReactive` must be used.** They used to attach the check to the receiver in place, so a bare `x.validateReactive { … }` statement worked. They now return a new `MutableValidated` that carries the check, and the receiver is untouched. A statement-position call compiles with no warning and silently does nothing: no issue text, no gated writes.
+
+  ```kotlin
+  // 1.3 (worked), now a silent no-op
+  val credits = course.lens(Course.usbeCredits).nullToZero()
+  credits.validateReactive { … }
+
+  // 1.4: validate where the value is declared, or chain it just before binding
+  val credits = course.lens(Course.usbeCredits).nullToZero().validateReactive { … }
+  ```
+
+  Find them with `grep -rnE '^\s*\w+\.(validate|assert|audit)Reactive\b'` (a match at the start of a line is a discarded result), then move each onto the declaration of the value that gets bound or passed to `validate(...)` / `issueText(...)`. If the lambda reads values declared after the receiver, move the receiver's declaration down instead. A script that appends the call to "the preceding declaration" is wrong when other declarations sit in between (it attached two checks to one value and dropped the other); pair by name and review each diff.
+
 ## Mechanical-rewrite tips
 
 - Generated-field renames (`User_email` → `User.email`) need the imports fixed in the same pass, or files in other packages lose the field.
