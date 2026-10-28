@@ -115,6 +115,8 @@ For in-depth coverage, see these companion documents:
 - **[testing.md](testing.md)** - Test patterns, infrastructure setup, debug tokens, common pitfalls
 - **[troubleshooting.md](troubleshooting.md)** - Common errors, imports, anti-patterns, best practices
 
+**If these companion docs don't cover it (unfamiliar API, exact signature, version-specific behavior), read the Lightning Server source directly at `/home/ihoonter/Lightning/Projects/lightning-server` instead of guessing.**
+
 ## Quick Reference
 
 ### Common Imports
