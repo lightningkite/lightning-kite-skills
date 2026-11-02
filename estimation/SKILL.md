@@ -35,8 +35,8 @@ Stray notes about them:
 Write the estimate as a JSON file named `<project>-estimate.json`, then render it with the script in this skill's directory:
 
 ```bash
-python3 ~/.claude/skills/estimation/generate_estimate.py <project>-estimate.json            # -> <project>-estimate.md
-python3 ~/.claude/skills/estimation/generate_estimate.py <project>-estimate.json out.xlsx   # needs openpyxl
+python3 ~/.claude/skills/estimation/generate_estimate.py <project>-estimate.json                 # -> <project>-estimate.md
+python3 ~/.claude/skills/estimation/generate_estimate.py <project>-estimate.json --format xlsx   # -> <project>-estimate.xlsx, needs openpyxl
 ```
 
 Never hand-edit the Markdown; change the JSON and re-render. Dev hours, costs, subtotals, and all totals are calculated by the script, so the JSON only holds hackathon hours. The script rejects unknown keys, so a typo fails loudly instead of silently dropping out of the totals.

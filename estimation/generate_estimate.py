@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Render a Lightning Kite estimate JSON file as Markdown or an Excel workbook.
 
-Usage: python3 generate_estimate.py <estimate.json> [output.md | output.xlsx]
+Usage: python3 generate_estimate.py <estimate.json> [output] [--format md|xlsx]
 
-The output defaults to the input path with a .md suffix. An .xlsx output needs
-openpyxl and uses live formulas driven by the rate and multiplier on its Summary
-sheet. See SKILL.md in this directory for the JSON format.
+The format defaults to the output's suffix, or md, and the output defaults to the
+input path with the format's suffix. An xlsx output needs openpyxl and uses live
+formulas driven by the rate and multiplier on its Summary sheet. See SKILL.md in this directory for the JSON format.
 """
+import argparse
 import json
 import sys
 from dataclasses import dataclass
@@ -383,15 +384,19 @@ def write_xlsx(est, dst):
 
 
 def main():
-    if len(sys.argv) not in (2, 3):
-        sys.exit(__doc__.strip())
-    src = Path(sys.argv[1])
-    dst = Path(sys.argv[2]) if len(sys.argv) == 3 else src.with_suffix(".md")
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("src", type=Path)
+    parser.add_argument("dst", type=Path, nargs="?")
+    parser.add_argument("--format", choices=("md", "xlsx"))
+    args = parser.parse_args()
+    src = args.src
+    fmt = args.format or ("xlsx" if args.dst and args.dst.suffix.lower() == ".xlsx" else "md")
+    dst = args.dst or src.with_suffix("." + fmt)
     try:
         est = Estimate(json.loads(src.read_text(encoding="utf-8")))
     except (EstimateError, json.JSONDecodeError) as e:
         sys.exit(f"{src}: {e}")
-    if dst.suffix.lower() == ".xlsx":
+    if fmt == "xlsx":
         write_xlsx(est, dst)
     else:
         dst.write_text(render_markdown(est), encoding="utf-8")
