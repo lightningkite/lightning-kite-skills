@@ -1,6 +1,6 @@
 ---
 name: service-abstractions-1.4-migration
-description: Use when upgrading a project to Service Abstractions 1.4 (and the Lightning Server 5.4 / LS-KiteUI versions built on it). Lists every deprecation and removal in 1.4 — the DataClassPath → Optic rename, top-level `User_email` fields becoming `User.email`, lowercase condition/modification builders, removed Condition/Modification types, data-shared serializer changes — with the replacement for each and a procedure for migrating a repo.
+description: Use when upgrading a project to Service Abstractions 1.4 (and the Lightning Server 5.4 / LS-KiteUI versions built on it). Lists every deprecation and removal in 1.4 — the DataClassPath → Optic rename, top-level `User_email` fields becoming `User.email`, lowercase condition/modification builders, removed Condition/Modification types, data-shared serializer changes, `withHeaderCalculator` → `withMetadata` — with the replacement for each and a procedure for migrating a repo.
 version: 1.0.0
 ---
 
@@ -201,6 +201,29 @@ These ship together with 1.4 and usually show up in the same migration:
 - **LS-KiteUI `lensPath` → `lens`**: bind through a path with `draft.lens(User.address.city)` (`import com.lightningkite.optics.lens`). A `Lens` path gives a non-null `MutableReactive<T>`; an `Optic` path gives `MutableReactive<T?>`, and writing `null` through a non-nullable target is ignored. It keeps the receiver's kind: `MutableReactiveValue`, `MutableValidated`, `MutableValidatedValue`, `ReactiveValue` and `Reactive` each get their own type back. A mutable receiver holding a nullable model (`Signal<User?>`) can lens too and gives `T?`: reads are `null` while the model is `null`, and writes are dropped. Read-only nullable receivers (`Reactive<User?>`) have no `lens(path)`.
 - **LS-KiteUI lens helpers moved to `com.lightningkite.optics`**: `lens`, `asString` used to live in `com.lightningkite.serialization`, with no alias left behind, so old imports fail with `Unresolved reference 'lens'`. Rewrite `import com.lightningkite.serialization.(lens|asString|withStringBuffer)` to `import com.lightningkite.optics.$1`. The deprecated `lensPath` overloads stay in `com.lightningkite.serialization`. `lensPath(path)` is deprecated with a `ReplaceWith`. The lambda form `lensPath { it.address.city }` is deprecated with no `lens` equivalent (`lens { … }` is the reactive library's read-only getter lens); it only accepts lambdas that return a `Lens`, so paths ending in `notNull`, `asType` or `elements` must be passed directly.
 - **LS-KiteUI `ensureTotal`** and `SortPart` take fields directly: `SortPart(User._id)`.
+
+- **Header calculators became `RequestMetadata`.** `Fetcher.withHeaderCalculator(suspend () -> List<Pair<String, String>>)` is deprecated in favour of `withMetadata(block: suspend RequestMetadata.() -> Unit)`, which edits a copy of the fetcher's existing metadata before every request instead of replacing it. Metadata goes out as headers over HTTP and as URL-encoded query parameters over WebSockets. `RequestMetadata` (`com.lightningkite.lightningserver.typed`) has `set`, `append`, `remove`, `get`, `getAll`, `has`, `clear`; names ignore case. Use `set` unless you really want a second value: `append("Authorization", …)` on an authenticated API sends two tokens and the server reads only the first.
+
+  ```kotlin
+  // 5.3
+  val authApi = api.withHeaderCalculator(api.userAuth.accessToken(token, invalidateToken))
+  val masked = api.withHeaderCalculator { listOf("X-Masquerade" to "User/$id") + accessToken() }
+  val raw: String = api.userAuth.accessToken(token)().first().second
+
+  // 5.4
+  val accessToken = api.userAuth.accessToken(token, invalidateToken)   // now returns the bare token
+  val authApi = api.withMetadata { set("Authorization", accessToken()) }
+  val masked = authApi.withMetadata { set("X-Masquerade", "User/$id") }
+  val raw: String = api.userAuth.accessToken(token)()
+  ```
+
+  Things that follow from it:
+  - **`AuthClientEndpoints.accessToken(sessionToken, forceInvalidate, maxAge)` changed return type with no deprecation** (compile errors). It returns `AccessToken` (`suspend () -> String`), the bare token, not `suspend () -> List<Pair<String, String>>`. Every use needs one of the rewrites above: passed to `withHeaderCalculator(…)` → `withMetadata { set("Authorization", accessToken()) }`; `accessToken(t)().first().second` → `accessToken(t)()`; combined with other headers → several `set` calls in one `withMetadata`. `maxAge` (default 4 minutes) controls how long a token is reused. `LightningServerAuthentication.accessToken` is an `AccessToken` too.
+  - **Anything implementing `Fetcher` must implement `withMetadata`** (compile error), usually a project's `TestRunnerFetcher`: store `metadata: suspend RequestMetadata.() -> Unit = {}`, implement `withMetadata(block) = TestRunnerFetcher(runtime) { metadata(); block() }`, and send `RequestMetadata().apply { metadata() }.toList()` as headers. Drop its `withHeaderCalculator` override.
+  - `ConnectivityFetcher(…, calculator = …)` / `BulkFetcher(…, calculator = …)` are deprecated; pass `metadata = { set(…) }`. Name the argument: a trailing lambda can resolve to the deprecated `calculator` overload.
+  - Regenerate the SDK. An old generated `Api`/`LiveApi` still compiles, with deprecation warnings.
+  - The server now reads `X-Masquerade` from the query too, so masquerading works over WebSockets. Before, it was silently ignored there.
+- **KiteUI `HttpHeaders.delete` → `remove`** (deprecated, with `ReplaceWith`).
 
 - **Full-text search moved from a condition to its own query.** `Condition.FullTextSearch` / `it.fullTextSearch(s)` is gone, so a search can no longer be AND-ed into a `Condition`. Use LS-KiteUI's `MaybeTextIndexQuery` (`com.lightningkite.lightningserver.db`) and `ModelCache.listOrTextSearch`:
 
