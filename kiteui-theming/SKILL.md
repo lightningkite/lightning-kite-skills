@@ -1,12 +1,14 @@
 ---
 name: kiteui-theming
 description: This skill should be used when the user asks about KiteUI themes, custom colors, fonts, semantic styling, or troubleshooting theme issues (colors not applying, fonts not loading, buttons not styled correctly)
-version: 1.0.0
+version: 1.1.0
 ---
 
-# KiteUI Theming Skill
+# KiteUI Theming
 
-You are an expert in KiteUI theming. This skill covers creating custom themes, adding fonts, styling semantics, and troubleshooting common theme issues.
+Deep reference for custom themes, fonts, and semantic overrides.  Modifier basics and built-in themes are in `../kiteui/theming.md`; the full chapter is `~/Projects/kiteui/docs/theming.md`.  If they disagree, KiteUI source (`library/src/commonMain/kotlin/com/lightningkite/kiteui/models/Theme.kt`) wins.
+
+Build overrides with `SemanticOverrides(XSemantic.override { ... })`; `semanticOverridesOf(X to { })` is deprecated.
 
 ## Quick Reference: Common Issues
 
@@ -16,8 +18,8 @@ You are an expert in KiteUI theming. This skill covers creating custom themes, a
 
 ### Custom Font Not Loading
 **Solution**:
-1. Place font files in `apps/src/commonMain/resources/fonts/{fontname}/normal.ttf`
-2. Run `./gradlew :apps:kiteuiResourcesCommon`
+1. Place font files in `<module>/src/commonMain/resources/fonts/{fontname}/normal.ttf`
+2. Run `./gradlew :<module>:kiteuiResourcesCommon`
 3. Reference as `Resources.fontsFontname` (auto-generated)
 
 ### Theme.flat2 accentHue Ignored
@@ -39,7 +41,7 @@ If headings aren't showing your HeaderSemantic styling:
 **Solution**: Create a custom semantic (e.g., `StepDotSemantic`) instead of overriding global semantics. See "Global Semantic Override Bleeding" section below.
 
 ### Prefer Custom Semantics Over Inline Styles
-**Rule**: Never use `themeModify` or anonymous styling. Always create a named custom semantic.
+**Rule**: For a recurring style, create a named custom semantic rather than an anonymous `themed(ThemeDerivation { })`.
 
 ---
 
@@ -62,7 +64,7 @@ val myTheme = Theme(
     id = "my-theme",
     font = FontAndStyle(),                        // System font
     elevation = 1.dp,                             // Shadow depth
-    cornerRadii = CornerRadii.Constant(8.dp),    // Border radius
+    cornerRadii = CornerRadii.AdaptiveToSpacing(8.dp),    // Border radius
     gap = 1.rem,                                  // Element spacing
     outlineWidth = 0.px,
     foreground = MyColors.text,
@@ -87,7 +89,7 @@ val appTheme = Signal<Theme>(myTheme)
 
 ### Font File Structure
 
-Place fonts in `apps/src/commonMain/resources/fonts/`:
+Place fonts in `<module>/src/commonMain/resources/fonts/`:
 
 ```
 fonts/
@@ -104,7 +106,7 @@ Variable fonts work - just name them `normal.ttf`.
 ### Generate Resources
 
 ```bash
-./gradlew :apps:kiteuiResourcesCommon
+./gradlew :<module>:kiteuiResourcesCommon
 ```
 
 This generates `Resources.fontsInter`, `Resources.fontsBebasneue`, etc.
@@ -142,29 +144,7 @@ val myTheme = Theme(
 
 ## Semantic Overrides
 
-### Why Semantic, Not Visual Hierarchy?
-
-KiteUI uses **semantic meaning** (important, danger, warning) instead of **visual hierarchy** (primary, secondary, tertiary). This is intentional:
-
-**Benefits**:
-1. **Resilient to redesign** - Change "important" from filled→outlined→elevated without touching code
-2. **Meaningful code** - `danger.button` clearly indicates purpose, `tertiary.red.button` doesn't
-3. **Theme flexibility** - Different brands can interpret "important" differently while keeping the same codebase
-4. **Better accessibility** - Semantic meaning helps screen readers
-5. **Forces good UX thinking** - Developers must consider "what does this button do?" not just "what should it look like?"
-
-**Example**:
-```kotlin
-// Semantic - clear intent
-important.button { text { content = "Save Changes" } }
-danger.button { text { content = "Delete Account" } }
-
-// Visual hierarchy - meaning unclear
-primary.button { text { content = "Save Changes" } }
-tertiary.red.button { text { content = "Delete Account" } }
-```
-
-When you retheme, semantic styling adapts naturally to the new design language.
+KiteUI styles by meaning (`important`, `danger`), not visual rank (`primary`, `tertiary`), so a retheme changes the look without touching screens.
 
 ### Understanding Semantics
 
@@ -196,7 +176,7 @@ semanticOverrides = SemanticOverrides(
 
 ### Critical: Derive Themes, Don't Set Them
 
-**Semantic overrides should _derive_ from the incoming theme state, not force absolute values.** This ensures semantics compose correctly when combined (e.g., `important.card.button`, `selected.radioToggleButton`).
+**Semantic overrides should _derive_ from the incoming theme state, not force absolute values.** This ensures semantics compose correctly when combined (e.g., `important.card.button`, `themed(SelectedSemantic).radioToggleButton`).
 
 #### The Problem with Absolute Values
 
@@ -295,7 +275,7 @@ theme.withBack(
     cascading = true,                           // Children inherit
     font = FontAndStyle(...),                   // Typography
     elevation = 2.dp,                           // Shadow
-    cornerRadii = CornerRadii.Constant(12.dp), // Radius
+    cornerRadii = CornerRadii.AdaptiveToSpacing(12.dp), // Radius
     gap = 1.rem,                                // Internal spacing
     foreground = Color.white,                   // Text color
     outline = MyColors.border,                  // Border color
@@ -315,7 +295,7 @@ ImportantSemantic.override {
     it.withBack(
         foreground = Color.white,
         background = MyColors.primary,
-        cornerRadii = CornerRadii.Constant(8.dp),
+        cornerRadii = CornerRadii.AdaptiveToSpacing(8.dp),
         font = FontAndStyle(weight = 600),
     )
 }
@@ -329,7 +309,7 @@ CardSemantic.override {
         background = Color.white,
         outline = MyColors.border,
         outlineWidth = 1.dp,
-        cornerRadii = CornerRadii.Constant(12.dp),
+        cornerRadii = CornerRadii.AdaptiveToSpacing(12.dp),
         elevation = 2.dp,
     )
 }
@@ -343,7 +323,7 @@ FieldSemantic.override {
         background = Color.white,
         outline = MyColors.border,
         outlineWidth = 2.dp,
-        cornerRadii = CornerRadii.Constant(8.dp),
+        cornerRadii = CornerRadii.AdaptiveToSpacing(8.dp),
     )
 }
 ```
@@ -394,7 +374,7 @@ val quickTheme = Theme.flat2(
 
 1. Ensure `jsViteDev --continuous` is running
 2. Wait for "BUILD SUCCESSFUL" in terminal
-3. For font changes: `./gradlew :apps:kiteuiResourcesCommon`
+3. For font changes: `./gradlew :<module>:kiteuiResourcesCommon`
 4. Hard refresh browser (Cmd+Shift+R)
 
 ### Colors Not Applying
@@ -409,7 +389,7 @@ val quickTheme = Theme.flat2(
 ### Font Not Rendering
 
 1. Font file exists at `resources/fonts/{name}/normal.ttf`
-2. Resources generated: `./gradlew :apps:kiteuiResourcesCommon`
+2. Resources generated: `./gradlew :<module>:kiteuiResourcesCommon`
 3. Using `Resources.fontsFontname` not a string
 
 ### Button Text Invisible
@@ -429,7 +409,7 @@ For decorative elements like step indicators with non-square dimensions:
 
 ```kotlin
 // Step dot pill shape (24px × 8px)
-selected.sizeConstraints(width = 1.5.rem, height = 0.5.rem).frame {
+sizeConstraints(width = 1.5.rem, height = 0.5.rem).themed(SelectedSemantic).frame {
     padding = 0.px  // Remove theme padding
 }
 
@@ -437,7 +417,7 @@ selected.sizeConstraints(width = 1.5.rem, height = 0.5.rem).frame {
 SelectedSemantic.override {
     it.withBack(
         background = MyColors.primary,
-        cornerRadii = CornerRadii.ForceConstant(999.rem),  // Capsule shape
+        cornerRadii = CornerRadii.Fixed(999.rem),  // Capsule shape
     )
 }
 ```
@@ -457,7 +437,7 @@ SelectedSemantic.override {
 // ❌ This bleeds into NavSemantic (which uses SelectedSemantic internally)
 SelectedSemantic.override {
     it.withBack(
-        cornerRadii = CornerRadii.ForceConstant(999.rem),  // Affects nav tabs!
+        cornerRadii = CornerRadii.Fixed(999.rem),  // Affects nav tabs!
     )
 }
 ```
@@ -473,11 +453,11 @@ data object StepDotSemantic : Semantic("step-dot") {
     )
 }
 
-// Create a ViewWriter extension for easy use
-inline val ViewWriter.stepDot: ViewWriter get() = StepDotSemantic.onNext
+// Optional modifier extension (sizing comes before theme in the chain)
+inline val ElementWriter.CanAddTheme.stepDot: ElementWriter.CanAddTheme get() = themed(StepDotSemantic)
 
 // Usage
-stepDot.sizeConstraints(width = 1.5.rem, height = 0.5.rem).frame { padding = 0.px }
+sizeConstraints(width = 1.5.rem, height = 0.5.rem).stepDot.frame { padding = 0.px }
 ```
 
 **Rule**: If a semantic override might affect other components, create a custom semantic instead.
@@ -487,10 +467,8 @@ stepDot.sizeConstraints(width = 1.5.rem, height = 0.5.rem).frame { padding = 0.p
 **Always prefer custom semantics over inline/anonymous styling:**
 
 ```kotlin
-// ❌ Don't use themeModify or inline styles
-themeModify { theme ->
-    theme.withBack(background = Color.red)
-}.button { /* ... */ }
+// ❌ Don't use anonymous derivations for recurring styles
+themed(ThemeDerivation { it.withBack(background = Color.red) }).button { /* ... */ }
 
 // ✅ Create a custom semantic
 data object AlertSemantic : Semantic("alert") {
@@ -501,7 +479,7 @@ data object AlertSemantic : Semantic("alert") {
 }
 
 // Use in theme overrides or directly
-AlertSemantic.onNext.button { /* ... */ }
+themed(AlertSemantic).button { /* ... */ }
 ```
 
 **Why semantics over inline styles:**
@@ -515,7 +493,7 @@ AlertSemantic.onNext.button { /* ... */ }
 
 ## Creating Custom Semantics
 
-**Important**: Only create custom semantics when existing ones don't fit semantically. Check available semantics in KiteUI source (`/Users/jivie/Projects/kiteui/library/src/commonMain/kotlin/com/lightningkite/kiteui/models/Theme.kt`) first.
+**Important**: Only create custom semantics when existing ones don't fit semantically. Check available semantics in KiteUI source (`~/Projects/kiteui/library/src/commonMain/kotlin/com/lightningkite/kiteui/models/Theme.kt`) first.
 
 Available built-in semantics include: ImportantSemantic, DangerSemantic, WarningSemantic, SelectedSemantic, UnselectedSemantic, CardSemantic, FieldSemantic, ButtonSemantic, HeaderSemantic, and many more.
 
@@ -547,7 +525,7 @@ semanticOverrides = SemanticOverrides(
 )
 ```
 
-Use in views with `onNext(ThemeDerivation { it[MyCustomSemantic] })` or create a view modifier extension.
+Use in views with `themed(MyCustomSemantic).col { }`, or a modifier extension as above.  (`Semantic.onNext` and `onNext(...)` are deprecated.)
 
 ### ⚠️ `Semantic` is an abstract class — can't use `object : Semantic` trivially; prefer built-ins for selected state
 
@@ -565,8 +543,6 @@ button {
 ```
 
 This is the standard pattern for filter chips, category tabs, or any button that should look "selected" when active.
-
-Verified in: BrowseListingsScreen.kt (ls-kiteui-starter marketplace demo, iter 2).
 
 **Best Practice**: Prefer reusing existing semantics when semantically appropriate:
 - Use `SelectedSemantic` for active/selected states
@@ -597,7 +573,7 @@ val appTheme = Signal<Theme>(Theme(
         size = 1.rem,
     ),
     elevation = 1.dp,
-    cornerRadii = CornerRadii.Constant(12.dp),
+    cornerRadii = CornerRadii.AdaptiveToSpacing(12.dp),
     gap = 1.rem,
     outlineWidth = 0.px,
     foreground = AppColors.text,
@@ -608,7 +584,7 @@ val appTheme = Signal<Theme>(Theme(
             it.withBack(
                 foreground = Color.white,
                 background = AppColors.primary,
-                cornerRadii = CornerRadii.Constant(8.dp),
+                cornerRadii = CornerRadii.AdaptiveToSpacing(8.dp),
                 font = FontAndStyle(
                     font = Resources.fontsInter,
                     weight = 600,
@@ -620,7 +596,7 @@ val appTheme = Signal<Theme>(Theme(
                 background = AppColors.cardBackground,
                 outline = AppColors.border,
                 outlineWidth = 1.dp,
-                cornerRadii = CornerRadii.Constant(12.dp),
+                cornerRadii = CornerRadii.AdaptiveToSpacing(12.dp),
                 elevation = 1.dp,
             )
         },
@@ -629,7 +605,7 @@ val appTheme = Signal<Theme>(Theme(
                 background = AppColors.cardBackground,
                 outline = AppColors.border,
                 outlineWidth = 2.dp,
-                cornerRadii = CornerRadii.Constant(8.dp),
+                cornerRadii = CornerRadii.AdaptiveToSpacing(8.dp),
             )
         },
         HeaderSemantic.override {
@@ -662,7 +638,7 @@ val appTheme = Signal<Theme>(Theme(
 | `id` | `String` | `"my-theme"` |
 | `font` | `FontAndStyle` | `FontAndStyle(weight = 400)` |
 | `elevation` | `Dimension` | `2.dp` |
-| `cornerRadii` | `CornerRadii` | `CornerRadii.Constant(8.dp)` |
+| `cornerRadii` | `CornerRadii` | `CornerRadii.AdaptiveToSpacing(8.dp)` |
 | `gap` | `Dimension` | `1.rem` |
 | `outlineWidth` | `Dimension` | `1.dp` |
 | `foreground` | `Paint` | `Color.fromHex(0x1A1A1A)` |
@@ -691,12 +667,10 @@ KiteUI offers several corner radius strategies:
 // AdaptiveToSpacing - adapts to parent spacing context
 // Uses min(value, parent's gap) - good for tab bars where buttons touch (gap=0)
 cornerRadii = CornerRadii.AdaptiveToSpacing(8.dp)
-cornerRadii = CornerRadii.Constant(8.dp)  // Alias for AdaptiveToSpacing
 
 // Fixed - always this exact value, never adapts to context
 // Use for elements that should NEVER have rounded corners (like app shell)
 cornerRadii = CornerRadii.Fixed(0.px)
-cornerRadii = CornerRadii.ForceConstant(8.dp)  // Alias for Fixed
 
 // Circular - ratio of element size (0.5 = circle)
 cornerRadii = CornerRadii.RatioOfSize(0.5f)
@@ -717,7 +691,7 @@ cornerRadii = CornerRadii.PerCorner(
 cornerRadii = CornerRadii.RatioOfSpacing(0.5f)
 ```
 
-**Aliases**: `Constant` is an alias for `AdaptiveToSpacing`, and `ForceConstant` is an alias for `Fixed`. Prefer the explicit names for clarity.
+`CornerRadii.Constant` and `CornerRadii.ForceConstant` are deprecated aliases of `AdaptiveToSpacing` and `Fixed`.
 
 **App Shell Pattern**: Use `CornerRadii.Fixed(0.px)` for outer container semantics (like `OuterSemantic`, `MainContentSemantic`) to prevent unwanted rounding on the app shell:
 
@@ -739,15 +713,16 @@ MainContentSemantic.override {
 },
 ```
 
-**Capsule/Pill Shapes**: Use `CornerRadii.ForceConstant(999.rem)` (or any very large value) to create capsule shapes. The browser automatically limits the radius to create fully rounded ends, making pills from rectangles and circles from squares.
+**Capsule/Pill Shapes**: Use `CornerRadii.Fixed(999.rem)` (or any very large value) to create capsule shapes. The browser automatically limits the radius to create fully rounded ends, making pills from rectangles and circles from squares.
 
 **Tab Bar Example**:
 ```kotlin
 // Buttons with gap=0 won't have visible radii between them
-row(gap = 0.dp) {
+row {
+    gap = 0.dp
     repeat(4) {
         important.button {
-            // Constant(8.dp) becomes 0dp between buttons
+            // AdaptiveToSpacing(8.dp) becomes 0dp between buttons
             // but stays 8dp on outer edges
         }
     }
@@ -828,7 +803,7 @@ semanticOverrides = SemanticOverrides(
             foreground = Color.white,
             outline = MyColors.primary,
             outlineWidth = 2.dp,
-            cornerRadii = CornerRadii.Constant(8.dp),
+            cornerRadii = CornerRadii.AdaptiveToSpacing(8.dp),
         )
     },
     // Unselected state - transparent with border
@@ -838,7 +813,7 @@ semanticOverrides = SemanticOverrides(
             foreground = MyColors.text,
             outline = MyColors.border,
             outlineWidth = 2.dp,
-            cornerRadii = CornerRadii.Constant(8.dp),
+            cornerRadii = CornerRadii.AdaptiveToSpacing(8.dp),
         )
     },
 )

@@ -23,7 +23,7 @@ val name = User.name                           // Lens<User, String> (Field)
 
 ## Procedure
 
-1. Bump `serviceAbstractions` (and `lightningServer` / `lightningServerKiteui` if used) in `gradle/libs.versions.toml`.
+1. Bump `serviceAbstractions` (and `lightningServer` / `lightningServerKiteui` if used) in `gradle/libs.versions.toml`. Going straight to epoch 1 (`1000.x`)? Import the stack catalog instead (`~/Projects/service-abstractions/docs/index.md#installing`) and also apply "Epoch 1" below.
 2. Delete stale generated code, since KSP caches by a hash of the models, not of the processor: `rm -rf */build/generated/ksp`.
 3. Compile everything (`./gradlew compileTestKotlinJvm compileTestKotlin compileKotlinJs --continue`). Fix **errors** first — they are the removed APIs below.
 4. Fix **deprecation warnings** using the tables below. Gradle only re-prints warnings for tasks that actually run, so do a `clean` before the final sweep.
@@ -134,6 +134,10 @@ APIs downstream use this to type results: e.g. LS-KiteUI's `signal.lens(User.nam
 
 Old serial names for `ListAllElements`/`SetAllElements`/`ListAnyElements`/`SetAnyElements` still decode.
 
+### Vector search
+
+`Table.findSimilar`/`findSimilarSparse`, `@VectorIndex`, `SparseEmbedding` and `VectorSearchParams` are gone. Embeddings no longer live on models: a `VectorIndex` from a `VectorDatabase` (`InMemoryDatabase`, `MongoDatabase` on Atlas, `PostgresDatabase` with pgvector) holds `VectorIndexEntry(_id, embedding)` per row, and `table.vectorIndexed(index, VectorProjection(condition, embed, reembedWhen))` keeps it in step. `index.search(query, limit)` returns `ScoredResult<ID>`s (the ID is `.model`) with no filtering or score threshold; choose the indexed rows with the projection's `condition` instead, then load the models by ID. Backfill existing rows with `index.rebuild(table, projection)`. See `~/Projects/service-abstractions/docs/database.md#vector-search`.
+
 ### Modifications
 
 | Removed | Replacement |
@@ -171,6 +175,14 @@ New: value classes have paths to their wrapped value — `.raw` (`IsRawString`, 
   Rewrite: `\b([A-Z]\w+)_([a-z]\w*)\b` → `$1.$2` catches the uses (skip `_id`-style names that aren't fields), then change the imports and de-duplicate them. Generic models still get serializer extensions (`Box.serializer(T.serializer()).fieldValue`); those keep their names.
 - `User.Companion.fields` lists all fields; it is skipped when the model has its own property named `fields`. (Before `1.4.0-prerelease-73-832ca291` a model with a `fields` property failed to compile with "Conflicting declarations" in `ModelFields*.kt`.)
 - `User.Companion.path` is still generated but deprecated.
+- **From 1000.0.0 (epoch 1), multiplatform modules need task wiring.** Only `kspCommonMainKotlinMetadata` writes commonMain's fields; `kspKotlinJvm` and the other target tasks no longer do. A module that adds the processor only to `kspJvm`, or lacks the stanza below, fails with "The generated sources for commonMain are missing" or with every `User.email` unresolved and an empty `build/generated/ksp/common/commonMain/kotlin`. Add the processor to every `ksp*` configuration (so `kspCommonMainMetadata` has it) and:
+
+  ```kotlin
+  tasks.matching { (it.name.startsWith("ksp") || it.name.startsWith("compile")) && it.name != "kspCommonMainKotlinMetadata" }
+      .configureEach { dependsOn("kspCommonMainKotlinMetadata") }
+  ```
+
+  JVM-only modules (`ksp(...)` with `kotlin("jvm")`) need nothing. Details: "Build setup" in `~/Projects/service-abstractions/docs/database-queries.md`.
 
 ## Lightning Server 5.4 / LS-KiteUI alongside 1.4
 
@@ -261,6 +273,18 @@ These ship together with 1.4 and usually show up in the same migration:
   ```
 
   Find them with `grep -rnE '^\s*\w+\.(validate|assert|audit)Reactive\b'` (a match at the start of a line is a discarded result), then move each onto the declaration of the value that gets bound or passed to `validate(...)` / `issueText(...)`. If the lambda reads values declared after the receiver, move the receiver's declaration down instead. A script that appends the call to "the preceding declaration" is wrong when other declarations sit in between (it attached two checks to one value and dropped the other); pair by name and review each diff.
+
+## Epoch 1 (1000.0.0) on top of 1.4 / 5.4
+
+Found moving an app from 1.4.0 / LS 5.4.0 to the stack catalog at 1000.0.0:
+
+- **`modelInfo(...)` requires `tableName`.** The old default was the model's serial name after the last `.` and before any `<` (so the class name: `"Task"`, `"Notification"`, `"NotificationSendMethods"`). Pass exactly that, or existing data is orphaned.
+- **Engines aren't a `ServerRuntime`.** Work a launcher did directly on the engine (`MigrateActions.runMigrations()` inside `KtorEngine.apply { }`) fails with "No context argument for ServerRuntime". Bind it as a `PreDeployTask` (`dependencies = { listOf(X.info.registration.preDeployTask) }`) and have the CLI call `runPreDeploy()`, or `runPreDeployTasksBlocking()` before `start()` for a local "prepare then serve". Tables' collections and indexes are prepared by pre-deploy tasks too, so a server that never runs them has no indexes.
+- **Settings files need edits**, because every setting is constructed at startup: `"telemetry": {"url": "dev"}` has no handler (the default is `"noop"`; other schemes need `otel-jvm`), and an empty `"llm": ""` fails ("No handler"). A new setting without `optional = true` fails every existing settings file with "Missing keys".
+- **Lightning Bot** (`com.lightningkite.lightningbot:*`, own catalog and bucket): `LLMChatEndpoints` → `Chat`, `McpServerEndpoints` → `McpServer`, `LLMTask` → `Agent.task`, `ChatScreen` → `chatView`, `LLMClientAndModel.Settings` → `LlmAccess.Settings` plus a separate `LlmModelId` setting (a legacy `bedrock://<model>?…` URL still parses; its model is ignored). Provider modules (`services:ai-bedrock`, `ai-openai`) must be added and `XLlmSettings.ensureRegistered()` called. Chat storage is new tables. See `~/Projects/lightning-bot/docs/guide.md`.
+- **SDK**: `uploadEarlyEndpoint` → `globalUpload` (`getFileUploadUrl()`, then `verifyUpload(token)`).
+- **KiteUI**: `dialogPageNavigator` and the second navigator of `appBase` are gone; open dialogs with `context.dialog { close -> … }`.
+- KSP plugin must match the libraries' (2.3.13), `compileSdk = 37`.
 
 ## Mechanical-rewrite tips
 

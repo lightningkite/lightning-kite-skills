@@ -6,7 +6,9 @@ version: 1.0.0
 
 # Lightning Server 5 & KiteUI 7 Migration Guide
 
-This comprehensive guide helps you migrate projects from Lightning Server 4.x and KiteUI 6.x to the latest versions (Lightning Server 5.x and KiteUI 7.x).
+This guide migrates projects from Lightning Server 4.x and KiteUI 6.x to Lightning Server 5.x and KiteUI 7.x.
+
+**It stops at 5.x / 7.x; the versions pinned below are historical.** After it, continue with the `service-abstractions-1.4-migration` skill (Service Abstractions 1.4 / LS 5.4, then the "Epoch 1" section for the current `1000.x` libraries, which come from the stack catalog). Current API: the `lightning-server`, `kiteui` and `service-abstractions` skills.
 
 ## Quick Overview of Major Changes
 
@@ -382,7 +384,7 @@ class UserEndpoints(path: ServerPath) : ServerPathGroup(path) {
     )
 
     val rest = ModelRestEndpoints(path("rest"), info)
-    val socketUpdates = ModelRestUpdatesWebsocket(path("rest"), info)
+    val socketUpdates = ModelRestUpdatesWebSocket(path("rest"), info)
 }
 
 // NEW
@@ -394,7 +396,7 @@ object UserEndpoints : ServerBuilder() {
     )
 
     val rest = path.path("rest") include ModelRestEndpoints(info)
-    val socketUpdates = path.path("rest") include ModelRestUpdatesWebsocket(info)
+    val socketUpdates = path.path("rest") include ModelRestUpdatesWebSocket(info)
 }
 ```
 
@@ -454,13 +456,13 @@ suspend fun postCreate(user: User) { /* ... */ }
 
 ```kotlin
 // OLD
-info.collection().find(condition { /* ... */ })
+info.collection().find(Condition { /* ... */ })
 info.collection().insertOne(model)
 info.collection().updateManyIgnoringResult(condition, modification)
 info.baseCollection().updateManyIgnoringResult(condition, modification)
 
 // NEW
-info.table().find(condition { /* ... */ })
+info.table().find(Condition { /* ... */ })
 info.table().insertOne(model)
 info.table().updateManyIgnoringResult(condition, modification)
 info.baseTable().updateManyIgnoringResult(condition, modification)
@@ -842,13 +844,13 @@ val comments = path.path("comments") module CommentsEndpoints
 ```kotlin
 // OLD
 val rest = ModelRestEndpoints(path("rest"), info)
-val socketUpdates = ModelRestUpdatesWebsocket(path("rest"), info)
+val socketUpdates = ModelRestUpdatesWebSocket(path("rest"), info)
 
 // NEW
 val rest = path.path("rest") include ModelRestEndpoints(info)
-val socketUpdates = path.path("rest") include ModelRestUpdatesWebsocket(info)
+val socketUpdates = path.path("rest") include ModelRestUpdatesWebSocket(info)
 // OR combined:
-val restWithWs = path.path("rest") include ModelRestEndpoints(info) + ModelRestUpdatesWebsocket(info)
+val restWithWs = path.path("rest") include ModelRestEndpoints(info) + ModelRestUpdatesWebSocket(info)
 ```
 
 ### 7.3 Multiplex WebSocket

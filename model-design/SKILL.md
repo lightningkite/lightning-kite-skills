@@ -80,7 +80,7 @@ data class Transaction(
     val type: TransactionType,
     val amount: Int,
     val balanceAfter: Int,
-    val createdAt: Instant = now(),
+    val createdAt: Instant = Clock.System.now(),
     // NO modifiedAt - events are immutable
 ) : HasId<Uuid>
 
@@ -89,8 +89,8 @@ data class Transaction(
 data class Account(
     override val _id: Uuid = Uuid.random(),
     val balance: Int = 0,
-    val createdAt: Instant = now(),
-    val modifiedAt: Instant = now(),  // Updated on changes
+    val createdAt: Instant = Clock.System.now(),
+    val modifiedAt: Instant = Clock.System.now(),  // Updated on changes
 ) : HasId<Uuid>
 ```
 
@@ -163,7 +163,7 @@ data class Promotion(
     }
 
     val isActive: Boolean get() {
-        val now = now()
+        val now = Clock.System.now()
         return now >= startsAt && (endsAt == null || now <= endsAt)
     }
 }
@@ -186,7 +186,7 @@ data class ModelName(
     val listField: List<Item> = emptyList(),
     val setField: Set<Uuid> = emptySet(),
     val flag: Boolean = false,
-    val createdAt: Instant = now(),
+    val createdAt: Instant = Clock.System.now(),
 ) : HasId<Uuid>
 ```
 
@@ -444,9 +444,9 @@ data class Auction(
     companion object {
         val EMPTY = Auction(
             name = "",
-            venue = nullUuid,
-            startDate = today(),
-            endDate = today(),
+            venue = Uuid.NIL,
+            startDate = Clock.System.todayIn(TimeZone.currentSystemDefault()),
+            endDate = Clock.System.todayIn(TimeZone.currentSystemDefault()),
         )
     }
 }
@@ -467,14 +467,14 @@ data class Subscription(
             user = userId,
             productId = "FREE_TIER",
             expires = Instant.DISTANT_FUTURE,
-            startTime = now(),
+            startTime = Clock.System.now(),
         )
 
         fun trial(userId: Uuid, days: Int = 14) = Subscription(
             user = userId,
             productId = "TRIAL",
-            expires = now().plus(days.days),
-            startTime = now(),
+            expires = Clock.System.now() + days.days,
+            startTime = Clock.System.now(),
         )
     }
 }
@@ -487,18 +487,18 @@ data class Subscription(
 | Annotation | Purpose | Example |
 |------------|---------|---------|
 | `@Index` | Query optimization | `@Index val email: String` |
-| `@Unique` | Unique constraint | `@Unique val email: String` |
+| `@Index(IndexUniqueness.Unique)` | Unique constraint | `@Index(IndexUniqueness.Unique) val email: EmailAddress` |
 | `@References(T::class)` | Foreign key | `@References(User::class) val owner: Uuid` |
 | `@MultipleReferences(T::class)` | Set of foreign keys | `@MultipleReferences(Tag::class) val tags: Set<Uuid>` |
 | `@Denormalized` | Copied/cached data | `@Denormalized val ownerName: String` |
-| `@MaxLength(storage, display)` | String length limit | `@MaxLength(256, 64) val name: String` |
+| `@MaxLength(size, average)` | String length limit | `@MaxLength(256, 64) val name: String` |
 | `@MaxSize(n)` | Collection size limit | `@MaxSize(20) val tags: Set<Uuid>` |
 | `@IntegerRange(min, max)` | Numeric bounds | `@IntegerRange(0, 1_000_000) val odometer: Int` |
 | `@MimeType(types, maxSize)` | File upload constraints | `@MimeType("image/*", maxSize = 10_000_000) val photo: ServerFile?` |
 | `@Description(text)` | API documentation | `@Description("User's display name") val name: String` |
 | `@IndexSet([fields])` | Compound index | `@IndexSet(["user", "timestamp"])` |
 | `@TextIndex([fields])` | Full-text search | `@TextIndex(["title", "description"])` |
-| `@UniqueSet([fields])` | Compound unique | `@UniqueSet(["make", "model", "year"])` |
+| `@IndexSet([fields], IndexUniqueness.Unique)` | Compound unique | `@IndexSet(["make", "model", "year"], IndexUniqueness.Unique)` |
 | `@AdminTableColumns` | Admin UI columns | `@AdminTableColumns(["name", "email"])` |
 | `@AdminSearchFields` | Admin search | `@AdminSearchFields(["name", "email"])` |
 | `@AdminTitleFields` | Admin title display | `@AdminTitleFields(["name"])` |
@@ -590,7 +590,7 @@ data class Order(
     val shippingAddress: Address,
 
     // Facts/timestamps - NOT a status enum
-    val createdAt: Instant = now(),
+    val createdAt: Instant = Clock.System.now(),
     val submitted: Instant? = null,
     val paid: Instant? = null,
     val shipped: Instant? = null,
@@ -619,7 +619,7 @@ data class Order(
 
     companion object {
         val EMPTY = Order(
-            customer = nullUuid,
+            customer = Uuid.NIL,
             shippingAddress = Address.EMPTY,
         )
     }
@@ -653,7 +653,7 @@ data class OrderEvent(
     override val _id: Uuid = Uuid.random(),
     @Index @References(Order::class) val orderId: Uuid,
     val type: OrderEventType,
-    val at: Instant = now(),
+    val at: Instant = Clock.System.now(),
     @References(User::class) val by: Uuid? = null,
     val notes: String? = null,
 ) : HasId<Uuid>
@@ -673,7 +673,7 @@ When a model is needed by both server (JVM) and client (JS/iOS), put it in a mul
 
 ```kotlin
 // ❌ BAD: Separate server and client versions of the same model
-// Server has embedding field, client doesn't — diverges over time
+// Server has extra fields, client doesn't — diverges over time
 
 // ✅ GOOD: Single model in multiplatform -shared module (e.g., ai-shared)
 @Queryable
@@ -681,8 +681,6 @@ public data class KnowledgeEntry(
     override val _id: Uuid = Uuid.random(),
     val label: String,
     val content: String,
-    @VectorIndex(dimensions = 1536)
-    val embedding: Embedding? = null,  // Nullable — only set by server
     val tags: Set<String> = emptySet(),
     val summary: String? = null,
     val source: String? = null,
@@ -694,9 +692,9 @@ public data class KnowledgeEntry(
 **Key rules:**
 - Put shared models in a multiplatform module (e.g., `my-shared`) that compiles for all targets (JVM, JS, iOS)
 - Use `@Queryable` so generated fields (`Model.field`) are available everywhere
-- Make server-only fields **nullable with defaults** (e.g., `embedding: Embedding? = null`) — client creates entries without them, server populates them
-- Use `Clock.System.now()` as default for timestamps — cleaner than making them nullable
-- For vector/embedding fields, keep nullable (not empty) — vector indexes expect specific dimensions
+- Make server-only fields **nullable with defaults** — client creates entries without them, server populates them
+- Use `Clock.System.now()` as default for timestamps — cleaner than making them nullable.  Import `kotlin.time.Clock` / `kotlin.time.Instant` by name, not `kotlin.time.*`: KSP-generated files copy the model file's imports, and a star import there can make `Instant` ambiguous
+- Embeddings don't live on models: a `VectorIndex` holds them, kept in step by `table.vectorIndexed(index, VectorProjection(...))` (see "Vector search" in `~/Projects/service-abstractions/docs/database.md`)
 - After moving models, regenerate SDK: `./gradlew :yourserver:generateSdk`
 - Import from the shared module everywhere: `import com.yourcompany.shared.models.*`
 
